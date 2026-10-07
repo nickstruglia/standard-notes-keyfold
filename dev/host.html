@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mock Standard Notes host</title>
+    <style>
+      body { margin: 0; font: 13px/1.4 system-ui, sans-serif; display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+      iframe { width: 100%; height: 100%; border: 0; border-right: 1px solid #ccc; }
+      aside { padding: 12px; overflow: auto; background: #f4f4f4; }
+      pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background: #fff; padding: 8px; border: 1px solid #ddd; max-height: 50vh; overflow: auto; }
+      button { margin: 2px 0; }
+    </style>
+  </head>
+  <body>
+    <iframe id="editor" title="editor"></iframe>
+    <aside>
+      <h3>Mock Standard Notes host</h3>
+      <p>Speaks the component-relay protocol so the editor can be developed and tested without Standard Notes.</p>
+      <div>
+        <button id="toggle-lock">Toggle "Prevent editing"</button>
+        <button id="toggle-theme">Toggle dark theme</button>
+        <button id="remote-edit">Simulate edit from another device</button>
+        <button id="reload">Reload editor</button>
+        <button id="reset">Clear note</button>
+      </div>
+      <p>Saves: <span id="save-count">0</span> · Preview: <em id="preview"></em></p>
+      <h4>Stored note text</h4>
+      <pre id="note"></pre>
+    </aside>
+    <script type="module" src="./host.js"></script>
+  </body>
+</html>

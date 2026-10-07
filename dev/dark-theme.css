@@ -1,0 +1,11 @@
+/* Minimal stand-in for a Standard Notes dark theme. */
+:root {
+  --sn-stylekit-background-color: #15161a;
+  --sn-stylekit-foreground-color: #e6e6e6;
+  --sn-stylekit-border-color: #2d2f36;
+  --sn-stylekit-secondary-background-color: #1c1d22;
+  --sn-stylekit-contrast-background-color: #262830;
+  --sn-stylekit-neutral-color: #9b9ea6;
+  --sn-stylekit-info-color: #5a9cf0;
+  --sn-stylekit-input-placeholder-color: #6a6d75;
+}

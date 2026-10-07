@@ -1,0 +1,185 @@
+import { BIP39_ENGLISH } from './wordlist'
+import { hasSubtleCrypto, hmacSha512, sha256, toHex, utf8 } from './encoding'
+
+export type MnemonicScheme = 'bip39' | 'electrum' | 'aezeed' | 'slip39' | 'monero' | 'other'
+
+export const SCHEMES: { id: MnemonicScheme; label: string; counts: number[] }[] = [
+  { id: 'bip39', label: 'BIP39', counts: [12, 15, 18, 21, 24] },
+  { id: 'electrum', label: 'Electrum', counts: [12] },
+  { id: 'aezeed', label: 'Aezeed (LND)', counts: [24] },
+  { id: 'slip39', label: 'SLIP-39 share (Shamir)', counts: [20, 33] },
+  { id: 'monero', label: 'Monero', counts: [25, 13, 16] },
+  { id: 'other', label: 'Other', counts: [] },
+]
+
+export const COMMON_WORD_COUNTS = [12, 13, 15, 16, 18, 20, 21, 24, 25, 33]
+export const MAX_WORDS = 48
+
+/** Schemes whose words come from the BIP39 English list. */
+export const usesBip39Wordlist = (scheme: MnemonicScheme): boolean =>
+  scheme === 'bip39' || scheme === 'electrum' || scheme === 'aezeed'
+
+const WORD_INDEX = new Map(BIP39_ENGLISH.map((w, i) => [w, i]))
+
+export const normalizeWord = (word: string): string => word.normalize('NFKD').trim().toLowerCase()
+
+export const isBip39Word = (word: string): boolean => WORD_INDEX.has(normalizeWord(word))
+
+/** Split pasted text ("1. abandon 2. ability", newlines, commas...) into words. */
+export const splitPhrase = (text: string): string[] =>
+  text
+    .replace(/\b\d+[.):]\s*/g, ' ')
+    .split(/[\s,;]+/)
+    .map(normalizeWord)
+    .filter((w) => w && !/^\d+$/.test(w))
+
+/**
+ * BIP39 words are unique in their first four letters, so a 4+ letter
+ * prefix that matches exactly one word can be expanded safely.
+ */
+export const expandPrefix = (word: string): string => {
+  const w = normalizeWord(word)
+  if (w.length < 4 || WORD_INDEX.has(w)) return w
+  const matches = BIP39_ENGLISH.filter((candidate) => candidate.startsWith(w))
+  return matches.length === 1 ? matches[0] : w
+}
+
+const editDistance = (a: string, b: string): number => {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0]
+    prev[0] = i
+    for (let j = 1; j <= b.length; j++) {
+      const temp = prev[j]
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1))
+      diag = temp
+    }
+  }
+  return prev[b.length]
+}
+
+/** Closest wordlist entries for a misspelled word. */
+export const suggestWords = (word: string, limit = 3): string[] => {
+  const w = normalizeWord(word)
+  if (!w) return []
+  const byPrefix = BIP39_ENGLISH.filter((c) => c.startsWith(w.slice(0, 4)))
+  if (byPrefix.length > 0 && byPrefix.length <= limit) return byPrefix
+  return BIP39_ENGLISH.map((c) => [c, editDistance(w, c)] as const)
+    .filter(([, d]) => d <= 2)
+    .sort((x, y) => x[1] - y[1])
+    .slice(0, limit)
+    .map(([c]) => c)
+}
+
+export type CheckStatus = 'valid' | 'invalid' | 'incomplete' | 'unchecked'
+
+export interface MnemonicCheck {
+  status: CheckStatus
+  message: string
+  /** 0-based positions of words that are not in the wordlist. */
+  unknownWords: number[]
+}
+
+const bip39Checksum = async (indices: number[]): Promise<boolean> => {
+  const totalBits = indices.length * 11
+  const checksumBits = totalBits / 33
+  const entropyBits = totalBits - checksumBits
+  const bits = indices.map((i) => i.toString(2).padStart(11, '0')).join('')
+  const entropy = new Uint8Array(entropyBits / 8)
+  for (let i = 0; i < entropy.length; i++) {
+    entropy[i] = parseInt(bits.slice(i * 8, i * 8 + 8), 2)
+  }
+  const hash = await sha256(entropy)
+  const hashBits = Array.from(hash, (b) => b.toString(2).padStart(8, '0')).join('')
+  return bits.slice(entropyBits) === hashBits.slice(0, checksumBits)
+}
+
+export type ElectrumSeedType = 'standard' | 'segwit' | '2fa' | '2fa-segwit'
+
+const ELECTRUM_PREFIXES: [string, ElectrumSeedType][] = [
+  ['01', 'standard'],
+  ['100', 'segwit'],
+  ['101', '2fa'],
+  ['102', '2fa-segwit'],
+]
+
+/** Electrum "new style" seeds carry their version in HMAC-SHA512("Seed version", seed). */
+export const electrumSeedType = async (words: string[]): Promise<ElectrumSeedType | null> => {
+  const normalized = words
+    .map((w) => normalizeWord(w).replace(/[̀-ͯ]/g, ''))
+    .join(' ')
+  const hex = toHex(await hmacSha512(utf8('Seed version'), utf8(normalized)))
+  return ELECTRUM_PREFIXES.find(([prefix]) => hex.startsWith(prefix))?.[1] ?? null
+}
+
+export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]): Promise<MnemonicCheck> => {
+  const words = rawWords.map(normalizeWord)
+  const filled = words.filter(Boolean).length
+  const unknownWords = usesBip39Wordlist(scheme)
+    ? words.flatMap((w, i) => (w && !WORD_INDEX.has(w) ? [i] : []))
+    : []
+
+  if (filled === 0) {
+    return { status: 'incomplete', message: 'No words entered yet.', unknownWords }
+  }
+  if (filled < words.length) {
+    return {
+      status: 'incomplete',
+      message: `${filled} of ${words.length} words entered.`,
+      unknownWords,
+    }
+  }
+  if (unknownWords.length > 0) {
+    const list = unknownWords.map((i) => `#${i + 1}`).join(', ')
+    return {
+      status: 'invalid',
+      message: `Not in the BIP39 wordlist: ${list}.`,
+      unknownWords,
+    }
+  }
+  if (!hasSubtleCrypto() && (scheme === 'bip39' || scheme === 'electrum')) {
+    return { status: 'unchecked', message: 'Checksum check needs a secure (https) context.', unknownWords }
+  }
+
+  switch (scheme) {
+    case 'bip39': {
+      if (![12, 15, 18, 21, 24].includes(words.length)) {
+        return {
+          status: 'invalid',
+          message: `BIP39 phrases have 12, 15, 18, 21 or 24 words (this has ${words.length}).`,
+          unknownWords,
+        }
+      }
+      const ok = await bip39Checksum(words.map((w) => WORD_INDEX.get(w)!))
+      return ok
+        ? { status: 'valid', message: `Valid BIP39 checksum (${words.length} words).`, unknownWords }
+        : {
+            status: 'invalid',
+            message: 'Checksum mismatch. Check the spelling and order of every word.',
+            unknownWords,
+          }
+    }
+    case 'electrum': {
+      const type = await electrumSeedType(words)
+      return type
+        ? { status: 'valid', message: `Valid Electrum seed (${type}).`, unknownWords }
+        : {
+            status: 'invalid',
+            message: 'Not a valid Electrum 2.0+ seed. Check the words, or pick another scheme.',
+            unknownWords,
+          }
+    }
+    case 'aezeed':
+      return {
+        status: 'unchecked',
+        message: 'All words are in the wordlist. The aezeed checksum is not checked here.',
+        unknownWords,
+      }
+    default:
+      return {
+        status: 'unchecked',
+        message: `${words.length} words. Checksums for this scheme are not checked here.`,
+        unknownWords,
+      }
+  }
+}

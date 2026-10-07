@@ -1,0 +1,79 @@
+import { createContext } from 'preact'
+import { useContext, useEffect, useRef, useState } from 'preact/hooks'
+import { DEFAULT_SETTINGS, type VaultSettings } from '../lib/vault'
+
+export interface ConfirmOptions {
+  title: string
+  message: string
+  confirmLabel?: string
+  danger?: boolean
+}
+
+export interface Ui {
+  settings: VaultSettings
+  readOnly: boolean
+  /** Bumped to hide every revealed secret at once. */
+  hideEpoch: number
+  copy: (text: string, what: string) => void
+  toast: (message: string, tone?: 'info' | 'success' | 'error') => void
+  confirm: (options: ConfirmOptions) => Promise<boolean>
+}
+
+export const UiContext = createContext<Ui>({
+  settings: DEFAULT_SETTINGS,
+  readOnly: false,
+  hideEpoch: 0,
+  copy: () => undefined,
+  toast: () => undefined,
+  confirm: async () => false,
+})
+
+export const useUi = () => useContext(UiContext)
+
+/** Runs an async computation and keeps only the latest result. */
+export const useAsync = <T,>(compute: () => Promise<T>, deps: unknown[]): T | undefined => {
+  const [value, setValue] = useState<T | undefined>(undefined)
+  const seq = useRef(0)
+  useEffect(() => {
+    const mine = ++seq.current
+    compute().then(
+      (v) => mine === seq.current && setValue(() => v),
+      () => mine === seq.current && setValue(undefined),
+    )
+  }, deps)
+  return value
+}
+
+/** A revealed flag that resets on hideEpoch and after the auto-hide delay. */
+export const useReveal = (activity?: unknown): [boolean, (next: boolean) => void] => {
+  const { hideEpoch, settings } = useUi()
+  const [revealed, setRevealed] = useState(false)
+  useEffect(() => setRevealed(false), [hideEpoch])
+  useEffect(() => {
+    if (!revealed || !settings.autoHideSeconds) return
+    const timer = setTimeout(() => setRevealed(false), settings.autoHideSeconds * 1000)
+    return () => clearTimeout(timer)
+  }, [revealed, settings.autoHideSeconds, activity])
+  return [revealed, setRevealed]
+}
+
+let textSecurity: boolean | undefined
+/** Chrome, Safari and recent Firefox can mask a plain text input with CSS. */
+export const supportsTextSecurity = (): boolean => {
+  if (textSecurity === undefined) {
+    textSecurity = typeof CSS !== 'undefined' && CSS.supports?.('-webkit-text-security', 'disc') === true
+  }
+  return textSecurity
+}
+
+/** Attributes that keep secrets away from spellcheck services, autofill and password managers. */
+export const SECRET_ATTRS = {
+  autocomplete: 'off',
+  autocorrect: 'off',
+  autocapitalize: 'off',
+  spellcheck: false,
+  'data-1p-ignore': 'true',
+  'data-lpignore': 'true',
+  'data-bwignore': 'true',
+  'data-form-type': 'other',
+} as const
