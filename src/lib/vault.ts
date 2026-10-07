@@ -73,7 +73,19 @@ export interface VaultSettings {
   autoLockMinutes: number
   /** Flag entries whose backups were not checked within this many months. 0 = off. */
   backupReminderMonths: number
+  /** Expandable cards, or a list beside an editor. */
+  layout: Layout
+  density: Density
+  /** In the card layout, opening an entry closes the others. */
+  singleExpand: boolean
+  groupBy: GroupBy
+  sort: SortOrder
 }
+
+export type Layout = 'stacked' | 'split'
+export type Density = 'comfortable' | 'compact'
+export type GroupBy = 'none' | 'kind' | 'chain' | 'wallet' | 'tag'
+export type SortOrder = 'updated' | 'label' | 'created'
 
 export interface VaultData {
   entries: Entry[]
@@ -87,6 +99,11 @@ export const DEFAULT_SETTINGS: VaultSettings = {
   privacyScreen: false,
   autoLockMinutes: 5,
   backupReminderMonths: 12,
+  layout: 'stacked',
+  density: 'comfortable',
+  singleExpand: false,
+  groupBy: 'none',
+  sort: 'updated',
 }
 
 export const today = (): string => {
@@ -132,6 +149,8 @@ const bool = (v: unknown, fallback = false): boolean => (typeof v === 'boolean' 
 const num = (v: unknown, fallback: number): number =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : fallback
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+const oneOf = <T extends string>(v: unknown, options: readonly T[], fallback: T): T =>
+  options.includes(v as T) ? (v as T) : fallback
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 
@@ -196,6 +215,11 @@ export const normalizeVault = (raw: unknown): VaultData => {
       privacyScreen: bool(s.privacyScreen, DEFAULT_SETTINGS.privacyScreen),
       autoLockMinutes: num(s.autoLockMinutes, DEFAULT_SETTINGS.autoLockMinutes),
       backupReminderMonths: num(s.backupReminderMonths, DEFAULT_SETTINGS.backupReminderMonths),
+      layout: oneOf(s.layout, ['stacked', 'split'], DEFAULT_SETTINGS.layout),
+      density: oneOf(s.density, ['comfortable', 'compact'], DEFAULT_SETTINGS.density),
+      singleExpand: bool(s.singleExpand, DEFAULT_SETTINGS.singleExpand),
+      groupBy: oneOf(s.groupBy, ['none', 'kind', 'chain', 'wallet', 'tag'], DEFAULT_SETTINGS.groupBy),
+      sort: oneOf(s.sort, ['updated', 'label', 'created'], DEFAULT_SETTINGS.sort),
     },
   }
 }

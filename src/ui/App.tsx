@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { UiContext, type ConfirmOptions, type Ui } from './context'
-import { EntryEditor } from './EntryEditor'
-import { EntryList, FILTERS, type Filter, type Sort, visibleEntries } from './EntryList'
+import { EditorDatalists, EntryEditor, type EntryHandlers } from './EntryEditor'
+import { EntryList, type Filter, groupEntries, visibleEntries } from './EntryList'
+import { EntryStack } from './EntryStack'
+import { Toolbar, type ViewPrefs } from './Toolbar'
 import { Settings } from './Settings'
 import { ConfirmDialog, ConnectingScreen, type DialogState, ForeignScreen, LockScreen, NewerScreen, type ToastItem, Toasts } from './Screens'
 import { BIP39_ENGLISH } from '../lib/wordlist'
@@ -48,7 +50,12 @@ export const App = ({ host }: { host: Host }) => {
   const [view, setView] = useState<View>({ type: 'list' })
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
-  const [sort, setSort] = useState<Sort>('updated')
+  // Layout state for this session only; it is not saved in the note.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const [sections, setSections] = useState<Record<string, boolean>>({})
+  const [viewOverride, setViewOverride] = useState<Partial<ViewPrefs>>({})
+  const [newEntryId, setNewEntryId] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [dialog, setDialog] = useState<DialogState | null>(null)
 
@@ -178,6 +185,7 @@ export const App = ({ host }: { host: Host }) => {
     showVault(emptyVault())
     setHideEpoch((n) => n + 1)
     setView({ type: 'list' })
+    setExpanded(new Set())
     setPhase({ name: 'locked', blob: parsed.blob })
   }, [saver])
 
@@ -262,13 +270,63 @@ export const App = ({ host }: { host: Host }) => {
     [],
   )
 
-  const ui: Ui = { settings, readOnly, hideEpoch, copy, toast, confirm }
+  const ui: Ui = {
+    settings,
+    readOnly,
+    hideEpoch,
+    copy,
+    toast,
+    confirm,
+    sectionOpen: (id, fallback) => sections[id] ?? fallback,
+    setSectionOpen: (id, open) => setSections((all) => ({ ...all, [id]: open })),
+  }
+
+  // View preferences live in the note's settings so they follow you across
+  // devices; local overrides keep them working when the note is read-only.
+  const viewPrefs: ViewPrefs = {
+    layout: settings.layout,
+    density: settings.density,
+    singleExpand: settings.singleExpand,
+    groupBy: settings.groupBy,
+    sort: settings.sort,
+    ...viewOverride,
+  }
+  const setViewPrefs = (patch: Partial<ViewPrefs>) => {
+    setViewOverride((o) => ({ ...o, ...patch }))
+    update((v) => ({ ...v, settings: { ...v.settings, ...patch } }))
+  }
+
+  const toggleEntry = (id: string) =>
+    setExpanded((open) => {
+      if (open.has(id)) {
+        const next = new Set(open)
+        next.delete(id)
+        return next
+      }
+      return viewPrefs.singleExpand ? new Set([id]) : new Set(open).add(id)
+    })
+
+  const toggleGroup = (key: string) =>
+    setCollapsedGroups((closed) => {
+      const next = new Set(closed)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+
+  /** Shows a newly created entry: opened, scrolled to, label focused. */
+  const reveal = (id: string) => {
+    setFilter('all')
+    setQuery('')
+    setCollapsedGroups(new Set())
+    setNewEntryId(id)
+    setExpanded((open) => (viewPrefs.singleExpand ? new Set([id]) : new Set(open).add(id)))
+    setView({ type: 'entry', id })
+  }
 
   const addEntry = (kind: EntryKind) => {
     const entry = createEntry(kind)
     update((v) => ({ ...v, entries: [entry, ...v.entries] }))
-    setFilter('all')
-    setView({ type: 'entry', id: entry.id })
+    reveal(entry.id)
   }
 
   const updateEntry = (id: string, patch: Partial<Entry>) =>
@@ -289,7 +347,7 @@ export const App = ({ host }: { host: Host }) => {
       updatedAt: now,
     }
     update((v) => ({ ...v, entries: [copyOf, ...v.entries] }))
-    setView({ type: 'entry', id: copyOf.id })
+    reveal(copyOf.id)
   }
 
   const deleteEntry = async (id: string) => {
@@ -305,6 +363,11 @@ export const App = ({ host }: { host: Host }) => {
     if (!ok) return
     update((v) => ({ ...v, entries: v.entries.filter((e) => e.id !== id) }))
     setView({ type: 'list' })
+    setExpanded((open) => {
+      const next = new Set(open)
+      next.delete(id)
+      return next
+    })
     toast('Entry deleted.', 'info', {
       label: 'Undo',
       run: () =>
@@ -332,10 +395,42 @@ export const App = ({ host }: { host: Host }) => {
     saver.schedule(() => serialize(data))
   }
 
-  const entries = visibleEntries(vault.entries, filter, sort, query, settings.backupReminderMonths)
+  const entries = visibleEntries(vault.entries, filter, viewPrefs.sort, query, settings.backupReminderMonths)
+  const groups = groupEntries(entries, viewPrefs.groupBy)
   const selected = view.type === 'entry' ? vault.entries.find((e) => e.id === view.id) ?? null : null
   const dueCount = vault.entries.filter((e) => isBackupDue(e, settings.backupReminderMonths)).length
-  const showDetail = view.type === 'settings' || selected !== null
+  const handlersFor = (id: string): EntryHandlers => ({
+    onUpdate: (patch) => updateEntry(id, patch),
+    onDelete: () => deleteEntry(id),
+    onDuplicate: () => duplicateEntry(id),
+  })
+
+  const emptyState = (
+    <div class="empty">
+      <Icon name="shield" size={28} />
+      <p>
+        <strong>No secrets yet.</strong>
+      </p>
+      <p class="small muted">
+        Keep as many seed phrases and keys in this note as you like. Each one folds into a single line until you open it,
+        and secrets stay hidden until you reveal them.
+      </p>
+      {!readOnly && (
+        <div class="row tight center">
+          <button type="button" class="button primary small" onClick={() => addEntry('mnemonic')}>
+            <Icon name="plus" /> Seed phrase
+          </button>
+          <button type="button" class="button small" onClick={() => addEntry('privateKey')}>
+            <Icon name="plus" /> Private key
+          </button>
+          <button type="button" class="button small" onClick={() => addEntry('other')}>
+            <Icon name="plus" /> Other secret
+          </button>
+        </div>
+      )}
+    </div>
+  )
+  const noMatches = <p class="empty small muted">No entries match.</p>
 
   let body
   switch (phase.name) {
@@ -351,117 +446,118 @@ export const App = ({ host }: { host: Host }) => {
     case 'newer':
       body = <NewerScreen version={phase.version} />
       break
-    case 'ready':
-      body = (
-        <div class={`layout ${showDetail ? 'has-detail' : ''}`}>
-          <aside class="sidebar">
-            <div class="toolbar">
-              <div class="search">
-                <Icon name="search" />
-                <input
-                  class="input"
-                  type="search"
-                  placeholder="Search labels, tags, notes"
-                  aria-label="Search"
-                  value={query}
-                  onInput={(e) => setQuery(e.currentTarget.value)}
-                  spellcheck={false}
-                />
-              </div>
-              <div class="row tight">
-                <select class="input" aria-label="Filter" value={filter} onChange={(e) => setFilter(e.currentTarget.value as Filter)}>
-                  {FILTERS.map(([id, label]) => (
-                    <option value={id}>
-                      {label}
-                      {id === 'attention' && dueCount ? ` (${dueCount})` : ''}
-                    </option>
-                  ))}
-                </select>
-                <select class="input" aria-label="Sort" value={sort} onChange={(e) => setSort(e.currentTarget.value as Sort)}>
-                  <option value="updated">Recently updated</option>
-                  <option value="label">Label</option>
-                  <option value="created">Date created</option>
-                </select>
-              </div>
-              {!readOnly && (
-                <div class="row tight new-buttons">
-                  <button type="button" class="button primary small" onClick={() => addEntry('mnemonic')}>
-                    <Icon name="plus" /> Seed phrase
-                  </button>
-                  <button type="button" class="button small" onClick={() => addEntry('privateKey')}>
-                    <Icon name="plus" /> Private key
-                  </button>
-                  <button type="button" class="button small" onClick={() => addEntry('other')}>
-                    <Icon name="plus" /> Other
-                  </button>
-                </div>
-              )}
-            </div>
-            {vault.entries.length === 0 ? (
-              <div class="empty">
-                <Icon name="shield" size={28} />
-                <p>
-                  <strong>No secrets yet.</strong>
-                </p>
-                <p class="small muted">
-                  Add a seed phrase (12 to 33 words, with checksum checks) or a private key. Secrets stay hidden until you
-                  reveal them, and nothing ever leaves Standard Notes' encryption.
-                </p>
-              </div>
-            ) : entries.length === 0 ? (
-              <p class="empty small muted">No entries match.</p>
-            ) : (
-              <EntryList entries={entries} selectedId={selected?.id ?? null} reminderMonths={settings.backupReminderMonths} onSelect={(id) => setView({ type: 'entry', id })} />
-            )}
-            <div class="sidebar-footer">
-              <button type="button" class="button small" onClick={() => setView({ type: 'settings' })}>
-                <Icon name="settings" /> Settings
-              </button>
-              {hasPassword && (
-                <button type="button" class="button small" onClick={lock}>
-                  <Icon name="lock" /> Lock
-                </button>
-              )}
-              <button type="button" class="button small" onClick={() => setHideEpoch((n) => n + 1)} title="Hide every revealed secret">
-                <Icon name="eyeOff" /> Hide all
-              </button>
-            </div>
-          </aside>
-          <main class="detail">
-            {view.type === 'settings' ? (
-              <Settings
-                settings={settings}
-                hasPassword={hasPassword}
-                onChange={updateSettings}
-                onSetPassword={setPassword}
-                onChangePassword={changePassword}
-                onRemovePassword={removePassword}
-                onClose={() => setView({ type: 'list' })}
-              />
-            ) : selected ? (
-              <EntryEditor
-                key={selected.id}
-                entry={selected}
-                reminderMonths={settings.backupReminderMonths}
-                onUpdate={(patch) => updateEntry(selected.id, patch)}
-                onDelete={() => deleteEntry(selected.id)}
-                onDuplicate={() => duplicateEntry(selected.id)}
-                onBack={() => setView({ type: 'list' })}
-              />
-            ) : (
-              <div class="placeholder muted">
-                <Icon name="shield" size={36} />
-                <p>Select an entry, or add a new one.</p>
-              </div>
-            )}
-          </main>
-        </div>
+    case 'ready': {
+      const toolbar = (
+        <Toolbar
+          query={query}
+          onQuery={setQuery}
+          filter={filter}
+          onFilter={setFilter}
+          dueCount={dueCount}
+          shown={entries.length}
+          total={vault.entries.length}
+          readOnly={readOnly}
+          onAdd={addEntry}
+          view={viewPrefs}
+          onView={setViewPrefs}
+          onExpandAll={() => {
+            setCollapsedGroups(new Set())
+            setExpanded(new Set(entries.map((e) => e.id)))
+          }}
+          onCollapseAll={() => setExpanded(new Set())}
+          onSettings={() => setView({ type: 'settings' })}
+          hasPassword={hasPassword}
+          onLock={lock}
+          onHideAll={() => setHideEpoch((n) => n + 1)}
+        />
       )
+      if (view.type === 'settings') {
+        body = (
+          <main class="detail full">
+            <Settings
+              settings={settings}
+              hasPassword={hasPassword}
+              onChange={updateSettings}
+              onSetPassword={setPassword}
+              onChangePassword={changePassword}
+              onRemovePassword={removePassword}
+              onLock={lock}
+              onClose={() => setView({ type: 'list' })}
+            />
+          </main>
+        )
+      } else if (viewPrefs.layout === 'stacked') {
+        body = (
+          <>
+            {toolbar}
+            <main class="detail full">
+              {vault.entries.length === 0 ? (
+                emptyState
+              ) : entries.length === 0 ? (
+                noMatches
+              ) : (
+                <EntryStack
+                  groups={groups}
+                  expanded={expanded}
+                  collapsedGroups={collapsedGroups}
+                  reminderMonths={settings.backupReminderMonths}
+                  newId={newEntryId}
+                  onToggle={toggleEntry}
+                  onToggleGroup={toggleGroup}
+                  handlersFor={handlersFor}
+                />
+              )}
+            </main>
+          </>
+        )
+      } else {
+        body = (
+          <>
+            {toolbar}
+            <div class={`layout ${selected ? 'has-detail' : ''}`}>
+              <aside class="sidebar">
+                {vault.entries.length === 0 ? (
+                  emptyState
+                ) : entries.length === 0 ? (
+                  noMatches
+                ) : (
+                  <EntryList
+                    groups={groups}
+                    collapsedGroups={collapsedGroups}
+                    selectedId={selected?.id ?? null}
+                    reminderMonths={settings.backupReminderMonths}
+                    onSelect={(id) => setView({ type: 'entry', id })}
+                    onToggleGroup={toggleGroup}
+                  />
+                )}
+              </aside>
+              <main class="detail">
+                {selected ? (
+                  <EntryEditor
+                    key={selected.id}
+                    entry={selected}
+                    reminderMonths={settings.backupReminderMonths}
+                    focusLabel={selected.id === newEntryId}
+                    onBack={() => setView({ type: 'list' })}
+                    {...handlersFor(selected.id)}
+                  />
+                ) : (
+                  <div class="placeholder muted">
+                    <Icon name="shield" size={36} />
+                    <p>Select an entry, or add a new one.</p>
+                  </div>
+                )}
+              </main>
+            </div>
+          </>
+        )
+      }
+    }
   }
 
   return (
     <UiContext.Provider value={ui}>
-      <div class={`app ${settings.privacyScreen && !focused && phase.name === 'ready' ? 'privacy' : ''}`}>
+      <div class={`app ${viewPrefs.density} ${settings.privacyScreen && !focused && phase.name === 'ready' ? 'privacy' : ''}`}>
         {host.mode === 'demo' && (
           <div class="banner banner-warn" role="note">
             <Icon name="alert" /> Demo mode: not connected to Standard Notes, nothing is saved. Do not type real secrets here.
@@ -481,6 +577,7 @@ export const App = ({ host }: { host: Host }) => {
           </div>
         )}
       </div>
+      <EditorDatalists />
       <datalist id="bip39-words">
         {BIP39_ENGLISH.map((w) => (
           <option value={w} />

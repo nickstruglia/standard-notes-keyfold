@@ -8,6 +8,14 @@ passphrases, creation dates, backup tracking and an optional second password.
 
 ## Features
 
+**Many secrets in one note, without the clutter**
+- Keep as many seed phrases, keys and other secrets in a single note as you like.
+- Each entry is a card that folds into one line (label, chain, wallet, word count, checksum and backup status) and opens when you click it. Expand all, collapse all, or have opening one card close the others.
+- Inside a card, every section (details, seed phrase, public info, extra fields, backups, notes) collapses to a one-line summary. The secret opens by default and the rest stays folded.
+- Group entries by type, chain, wallet or first tag, each group collapsible with a count. Sort by last update, label or creation date.
+- Compact density turns every entry into a single row with tighter spacing.
+- Prefer a list beside an editor? Switch the layout under **View**. View choices are saved in the note, so every device uses them.
+
 **Seed phrases of any length**
 - 12, 15, 18, 21 and 24-word BIP39 phrases, 20/33-word SLIP-39 shares, 25-word Monero seeds, or any custom count up to 48 words.
 - Each word sits in its own numbered, masked field. Paste a whole phrase into word 1 and it fills the grid.

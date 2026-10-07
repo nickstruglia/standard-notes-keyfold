@@ -116,10 +116,11 @@ interface SettingsProps {
   onSetPassword: (next: string) => Promise<void>
   onChangePassword: (current: string, next: string) => Promise<void>
   onRemovePassword: (current: string) => Promise<void>
+  onLock: () => void
   onClose: () => void
 }
 
-export const Settings = ({ settings, hasPassword, onChange, onSetPassword, onChangePassword, onRemovePassword, onClose }: SettingsProps) => {
+export const Settings = ({ settings, hasPassword, onChange, onSetPassword, onChangePassword, onRemovePassword, onLock, onClose }: SettingsProps) => {
   const { readOnly } = useUi()
   const [mode, setMode] = useState<PasswordMode | null>(null)
 
@@ -221,6 +222,9 @@ export const Settings = ({ settings, hasPassword, onChange, onSetPassword, onCha
                 />
               </label>
               <div class="row">
+                <button type="button" class="button primary" onClick={onLock}>
+                  <Icon name="lock" /> Lock now
+                </button>
                 <button type="button" class="button" disabled={readOnly} onClick={() => setMode('change')}>
                   Change password
                 </button>

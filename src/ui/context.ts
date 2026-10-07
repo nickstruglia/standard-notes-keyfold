@@ -17,6 +17,9 @@ export interface Ui {
   copy: (text: string, what: string) => void
   toast: (message: string, tone?: 'info' | 'success' | 'error') => void
   confirm: (options: ConfirmOptions) => Promise<boolean>
+  /** Open state of collapsible sections, kept for the session only. */
+  sectionOpen: (id: string, fallback: boolean) => boolean
+  setSectionOpen: (id: string, open: boolean) => void
 }
 
 export const UiContext = createContext<Ui>({
@@ -26,9 +29,16 @@ export const UiContext = createContext<Ui>({
   copy: () => undefined,
   toast: () => undefined,
   confirm: async () => false,
+  sectionOpen: (_id, fallback) => fallback,
+  setSectionOpen: () => undefined,
 })
 
 export const useUi = () => useContext(UiContext)
+
+export const useSection = (id: string, fallback: boolean): [boolean, (open: boolean) => void] => {
+  const { sectionOpen, setSectionOpen } = useUi()
+  return [sectionOpen(id, fallback), (open) => setSectionOpen(id, open)]
+}
 
 /** Runs an async computation and keeps only the latest result. */
 export const useAsync = <T,>(compute: () => Promise<T>, deps: unknown[]): T | undefined => {

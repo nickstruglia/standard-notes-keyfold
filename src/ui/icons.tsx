@@ -22,6 +22,10 @@ const paths = {
   archive: 'M3 4h18v4H3z M5 8v12h14V8 M10 12h4',
   x: 'M6 6l12 12 M18 6L6 18',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z M20 20l-4-4',
+  chevron: 'M9 6l6 6-6 6',
+  expand: 'M7 9l5-5 5 5 M7 15l5 5 5-5',
+  collapse: 'M7 4l5 5 5-5 M7 20l5-5 5 5',
+  sliders: 'M4 6h16 M4 12h16 M4 18h16 M9 4v4 M15 10v4 M7 16v4',
 } as const
 
 export type IconName = keyof typeof paths
