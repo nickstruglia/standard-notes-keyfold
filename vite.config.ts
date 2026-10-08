@@ -17,8 +17,12 @@ const name = owner === 'nickstruglia' ? 'Keyfold' : `Keyfold (${owner})`
 // up, so every deploy gets its own: major.minor from package.json, the
 // workflow run number as the patch.
 const [major, minor] = pkg.version.split('.')
-const version = process.env.GITHUB_RUN_NUMBER ? `${major}.${minor}.${process.env.GITHUB_RUN_NUMBER}` : pkg.version
-const commit = (process.env.GITHUB_SHA || '').slice(0, 7)
+// KEYFOLD_VERSION and KEYFOLD_COMMIT pin both for a build made outside this
+// workflow (the Standard Notes plugin directory copy, see scripts/directory-package.mjs).
+const version =
+  process.env.KEYFOLD_VERSION ||
+  (process.env.GITHUB_RUN_NUMBER ? `${major}.${minor}.${process.env.GITHUB_RUN_NUMBER}` : pkg.version)
+const commit = (process.env.KEYFOLD_COMMIT || process.env.GITHUB_SHA || '').slice(0, 7)
 
 // Nothing can connect out, and scripts load only from the site itself.
 // 'self' is not used: inside Standard Notes' sandbox the page has an opaque

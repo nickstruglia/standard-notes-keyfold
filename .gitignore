@@ -4,3 +4,4 @@ test-results/
 playwright-report/
 *.zip
 .DS_Store
+directory-package/
