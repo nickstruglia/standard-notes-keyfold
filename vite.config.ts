@@ -10,7 +10,7 @@ const siteUrl = (process.env.SITE_URL || 'https://nickstruglia.github.io/sn-cryp
 const CSP = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline' https: http://localhost:* http://127.0.0.1:*",
+  "style-src 'self' 'unsafe-inline' https: http://localhost:* http://127.0.0.1:* file:",
   "img-src 'self' data:",
   "font-src 'self' data:",
   "connect-src 'none'",
@@ -52,13 +52,26 @@ export default defineConfig({
   build: {
     target: 'es2022',
     assetsInlineLimit: 0,
+    modulePreload: false,
+    // A classic script, not an ES module: see the HTML rewrite below.
+    rolldownOptions: { output: { format: 'iife' } },
   },
   plugins: [
     {
       name: 'crypto-vault-release',
       apply: 'build',
-      transformIndexHtml: (html) =>
-        html.replace('<!--CSP-->', `<meta http-equiv="Content-Security-Policy" content="${CSP}" />`),
+      transformIndexHtml: {
+        order: 'post',
+        // Standard Notes sandboxes plugins without allow-same-origin, so the
+        // page has a "null" origin. Module scripts and crossorigin links are
+        // fetched with CORS and fail unless the server sends CORS headers
+        // (Standard Notes desktop's offline server may not). Plain tags load anywhere.
+        handler: (html) =>
+          html
+            .replace('<!--CSP-->', `<meta http-equiv="Content-Security-Policy" content="${CSP}" />`)
+            .replace(/<script type="module" crossorigin src=/g, '<script defer src=')
+            .replace(/<link rel="stylesheet" crossorigin href=/g, '<link rel="stylesheet" href='),
+      },
       generateBundle() {
         this.emitFile({ type: 'asset', fileName: 'ext.json', source: JSON.stringify(manifest, null, 2) + '\n' })
       },

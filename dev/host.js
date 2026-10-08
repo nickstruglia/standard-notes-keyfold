@@ -17,6 +17,12 @@ const state = {
   theme: false,
 }
 window.mockHost = state
+// Lets tests stream arbitrary text, e.g. a revision restored from note history.
+state.restore = (text) => {
+  state.note.content.text = text
+  streamNote()
+  render()
+}
 
 const render = () => {
   document.getElementById('note').textContent = state.note.content.text
@@ -70,6 +76,16 @@ const register = () => {
 
 const themeUrl = () => new URL('./dark-theme.css', location.href).href
 
+// The same sandbox Standard Notes gives third-party plugins (IframeFeatureView.tsx):
+// no allow-same-origin, so the editor runs with an opaque "null" origin, and no
+// allow= attribute, so the async Clipboard API is blocked. Pass ?sandbox=0 when
+// using the Vite dev server, whose module scripts need same-origin access.
+if (params.get('sandbox') !== '0') {
+  iframe.setAttribute(
+    'sandbox',
+    'allow-scripts allow-top-navigation-by-user-activation allow-popups allow-modals allow-forms allow-downloads',
+  )
+}
 iframe.addEventListener('load', register)
 iframe.src = editorUrl
 

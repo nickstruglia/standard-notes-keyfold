@@ -67,3 +67,19 @@ describe('view settings', () => {
     expect(s).toMatchObject({ layout: 'split', density: 'comfortable', groupBy: 'chain', singleExpand: true })
   })
 })
+
+describe('stabilize', () => {
+  it('keeps the previous order and groups while editing, and puts new entries first', async () => {
+    const { stabilize, snapshotOf } = await import('../src/ui/EntryList')
+    const a = createEntry('mnemonic', { label: 'A', chain: 'Bitcoin' })
+    const b = createEntry('mnemonic', { label: 'B', chain: 'Bitcoin' })
+    const before = snapshotOf(groupEntries([a, b], 'chain'))
+
+    // Editing B moves it first by date, and changing its chain would regroup it.
+    const edited = { ...b, chain: 'Ethereum' }
+    const c = createEntry('mnemonic', { label: 'C', chain: 'Bitcoin' })
+    const fresh = groupEntries([c, edited, a], 'chain')
+    const stable = stabilize(fresh, before)
+    expect(stable.map((g) => [g.label, g.entries.map((e) => e.label).join('')])).toEqual([['Bitcoin', 'CAB']])
+  })
+})

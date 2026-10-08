@@ -1,7 +1,9 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useState } from 'preact/hooks'
 import { Icon } from './icons'
+import { useFocusOnMount } from './context'
 
 export const LockScreen = ({ onUnlock }: { onUnlock: (password: string) => Promise<void> }) => {
+  const inputRef = useFocusOnMount<HTMLInputElement>()
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -33,7 +35,7 @@ export const LockScreen = ({ onUnlock }: { onUnlock: (password: string) => Promi
           aria-label="Vault password"
           value={password}
           onInput={(e) => setPassword(e.currentTarget.value)}
-          autofocus
+          ref={inputRef}
         />
         {error && (
           <p class="status status-error" role="alert">
@@ -97,20 +99,37 @@ export interface DialogState {
   resolve: (ok: boolean) => void
 }
 
-export const ConfirmDialog = ({ dialog, onClose }: { dialog: DialogState; onClose: (ok: boolean) => void }) => (
-  <div
-    class="overlay"
-    role="presentation"
-    onClick={(e) => e.target === e.currentTarget && onClose(false)}
-    onKeyDown={(e) => e.key === 'Escape' && onClose(false)}
-  >
+export const ConfirmDialog = ({ dialog, onClose }: { dialog: DialogState; onClose: (ok: boolean) => void }) => {
+  const cancelRef = useFocusOnMount<HTMLButtonElement>()
+  // Return focus to whatever opened the dialog.
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    return () => opener?.focus?.()
+  }, [])
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') onClose(false)
+    if (e.key !== 'Tab') return
+    // Keep keyboard focus inside the dialog.
+    const buttons = Array.from((e.currentTarget as HTMLElement).querySelectorAll('button'))
+    const first = buttons[0]
+    const last = buttons[buttons.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
+  return (
+  <div class="overlay" role="presentation" onClick={(e) => e.target === e.currentTarget && onClose(false)} onKeyDown={onKeyDown}>
     <div class="card dialog" role="alertdialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-message">
       <h2 id="dialog-title">{dialog.title}</h2>
       <p id="dialog-message" class="small">
         {dialog.message}
       </p>
       <div class="row end">
-        <button type="button" class="button" onClick={() => onClose(false)} autofocus>
+        <button type="button" class="button" onClick={() => onClose(false)} ref={cancelRef}>
           Cancel
         </button>
         <button type="button" class={`button ${dialog.danger ? 'danger' : 'primary'}`} onClick={() => onClose(true)}>
@@ -119,7 +138,8 @@ export const ConfirmDialog = ({ dialog, onClose }: { dialog: DialogState; onClos
       </div>
     </div>
   </div>
-)
+  )
+}
 
 export interface ToastItem {
   id: number

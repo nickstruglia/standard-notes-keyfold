@@ -20,7 +20,17 @@ export const FILTERS: [Filter, string][] = [
 /** Searches labels and public details only, never secret values. */
 const matches = (entry: Entry, query: string): boolean => {
   if (!query) return true
-  const haystack = [entry.label, entry.description, entry.chain, entry.wallet, entry.notes, ...entry.tags]
+  const haystack = [
+    entry.label,
+    entry.description,
+    entry.chain,
+    entry.wallet,
+    entry.notes,
+    entry.derivationPath,
+    entry.fingerprint,
+    entry.publicInfo,
+    ...entry.tags,
+  ]
     .join(' ')
     .toLowerCase()
   return query
@@ -49,7 +59,11 @@ export const visibleEntries = (entries: Entry[], filter: Filter, sort: SortOrder
     .filter((e) => matches(e, query.trim()))
     .sort((a, b) => {
       if (a.favorite !== b.favorite) return a.favorite ? -1 : 1
-      if (sort === 'label') return (a.label || '~').localeCompare(b.label || '~')
+      if (sort === 'label') {
+        // Untitled entries go last.
+        if (!a.label !== !b.label) return a.label ? -1 : 1
+        return a.label.localeCompare(b.label)
+      }
       if (sort === 'created') return (b.createdOn || '').localeCompare(a.createdOn || '')
       return b.updatedAt.localeCompare(a.updatedAt)
     })
@@ -94,6 +108,44 @@ export const groupEntries = (entries: Entry[], groupBy: GroupBy): EntryGroup[] =
   }
   const isEmpty = (g: EntryGroup) => g.key.endsWith(':')
   return list.sort((a, b) => Number(isEmpty(a)) - Number(isEmpty(b)) || a.label.localeCompare(b.label))
+}
+
+/** Where each entry sits in the displayed list. */
+export interface LayoutSnapshot {
+  order: string[]
+  groupOf: Map<string, string>
+  labelOf: Map<string, string>
+}
+
+export const snapshotOf = (groups: EntryGroup[]): LayoutSnapshot => ({
+  order: groups.flatMap((g) => g.entries.map((e) => e.id)),
+  groupOf: new Map(groups.flatMap((g) => g.entries.map((e) => [e.id, g.key] as const))),
+  labelOf: new Map(groups.map((g) => [g.key, g.label])),
+})
+
+/**
+ * Keeps entries in the position and group they had, so editing (which changes
+ * "last updated", a chain, a tag...) never moves the card under the cursor.
+ * Entries that were not shown before go first, in their fresh order.
+ */
+export const stabilize = (fresh: EntryGroup[], previous: LayoutSnapshot): EntryGroup[] => {
+  const rank = new Map(previous.order.map((id, i) => [id, i]))
+  const freshGroupOf = new Map(fresh.flatMap((g) => g.entries.map((e) => [e.id, g.key] as const)))
+  const freshLabelOf = new Map(fresh.map((g) => [g.key, g.label]))
+  const entries = fresh.flatMap((g) => g.entries).sort((a, b) => (rank.get(a.id) ?? -1) - (rank.get(b.id) ?? -1))
+
+  const groups = new Map<string, EntryGroup>()
+  for (const entry of entries) {
+    const key = previous.groupOf.get(entry.id) ?? freshGroupOf.get(entry.id)!
+    let group = groups.get(key)
+    if (!group) {
+      group = { key, label: previous.labelOf.get(key) ?? freshLabelOf.get(key) ?? '', entries: [] }
+      groups.set(key, group)
+    }
+    group.entries.push(entry)
+  }
+  const keyOrder = [...new Set([...previous.labelOf.keys(), ...fresh.map((g) => g.key)])]
+  return keyOrder.flatMap((key) => groups.get(key) ?? [])
 }
 
 const ChecksumBadge = ({ entry }: { entry: Entry }) => {

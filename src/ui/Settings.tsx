@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import { Icon } from './icons'
-import { useUi } from './context'
+import { useFocusOnMount, useUi } from './context'
 import type { VaultSettings } from '../lib/vault'
 import { DEFAULT_ITERATIONS, encryptionAvailable } from '../lib/vaultCrypto'
 
@@ -36,6 +36,8 @@ interface PasswordFormProps {
 const MIN_LENGTH = 10
 
 const PasswordForm = ({ mode, onSubmit, onCancel }: PasswordFormProps) => {
+  const currentRef = useFocusOnMount<HTMLInputElement>(mode !== 'set')
+  const nextRef = useFocusOnMount<HTMLInputElement>(mode === 'set')
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirmNext, setConfirmNext] = useState('')
@@ -66,14 +68,14 @@ const PasswordForm = ({ mode, onSubmit, onCancel }: PasswordFormProps) => {
       {mode !== 'set' && (
         <label class="field">
           <span class="field-label">Current vault password</span>
-          <input class="input" type="password" autocomplete="current-password" value={current} onInput={(e) => setCurrent(e.currentTarget.value)} autofocus />
+          <input class="input" type="password" autocomplete="current-password" value={current} onInput={(e) => setCurrent(e.currentTarget.value)} ref={currentRef} />
         </label>
       )}
       {needsNew && (
         <>
           <label class="field">
             <span class="field-label">New vault password</span>
-            <input class="input" type="password" autocomplete="new-password" value={next} onInput={(e) => setNext(e.currentTarget.value)} autofocus={mode === 'set'} />
+            <input class="input" type="password" autocomplete="new-password" value={next} onInput={(e) => setNext(e.currentTarget.value)} ref={nextRef} />
             {next && (
               <span class={`hint status-${strength.tone}`}>
                 {strength.label} (~{strength.bits} bits).{' '}

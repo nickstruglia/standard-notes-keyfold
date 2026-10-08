@@ -4,7 +4,7 @@ import { Icon, type IconName } from './icons'
 import { SecretField } from './Secret'
 import { WordGrid } from './WordGrid'
 import { KIND_LABELS } from './labels'
-import { useAsync, useSection, useUi } from './context'
+import { SECRET_ATTRS, useAsync, useSection, useUi } from './context'
 import { COMMON_WORD_COUNTS, MAX_WORDS, SCHEMES, type MnemonicScheme, checkMnemonic } from '../lib/mnemonic'
 import { detectKeyFormat } from '../lib/keyformat'
 import { type Entry, isBackupDue, lastVerified, today } from '../lib/vault'
@@ -146,6 +146,7 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
           placeholder="What is this wallet or key for?"
           readOnly={readOnly}
           onInput={(e) => update({ description: e.currentTarget.value })}
+          {...SECRET_ATTRS}
         />
       </Field>
       <div class="row">
@@ -493,6 +494,7 @@ const NotesSection = ({ entry, update }: SectionArgs) => {
         aria-label="Notes"
         readOnly={readOnly}
         onInput={(e) => update({ notes: e.currentTarget.value })}
+        {...SECRET_ATTRS}
       />
     </Section>
   )

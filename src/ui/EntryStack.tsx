@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'preact/hooks'
 import { Icon } from './icons'
+import { memo } from './memo'
 import { EntryActions, EntryBody, type EntryHandlers } from './EntryEditor'
 import { type EntryGroup, EntrySummary, Group } from './EntryList'
 import type { Entry } from '../lib/vault'
@@ -9,11 +10,11 @@ interface CardProps extends EntryHandlers {
   open: boolean
   reminderMonths: number
   isNew: boolean
-  onToggle: () => void
+  onToggle: (id: string) => void
 }
 
 /** One entry as an expandable card: a one-line summary that opens into its sections. */
-const EntryCard = ({ entry, open, reminderMonths, isNew, onToggle, ...handlers }: CardProps) => {
+const EntryCard = memo(({ entry, open, reminderMonths, isNew, onToggle, ...handlers }: CardProps) => {
   const ref = useRef<HTMLLIElement>(null)
   useEffect(() => {
     if (isNew) ref.current?.scrollIntoView({ block: 'nearest' })
@@ -22,7 +23,7 @@ const EntryCard = ({ entry, open, reminderMonths, isNew, onToggle, ...handlers }
   return (
     <li ref={ref} class={`card-entry ${open ? 'open' : ''}`}>
       <div class="card-header">
-        <button type="button" class="card-toggle" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
+        <button type="button" class="card-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => onToggle(entry.id)}>
           <Icon name="chevron" size={14} class="chevron" />
           <EntrySummary entry={entry} reminderMonths={reminderMonths} />
         </button>
@@ -35,7 +36,7 @@ const EntryCard = ({ entry, open, reminderMonths, isNew, onToggle, ...handlers }
       )}
     </li>
   )
-}
+})
 
 interface StackProps {
   groups: EntryGroup[]
@@ -61,7 +62,7 @@ export const EntryStack = ({ groups, expanded, collapsedGroups, reminderMonths, 
               open={expanded.has(entry.id)}
               reminderMonths={reminderMonths}
               isNew={entry.id === newId}
-              onToggle={() => onToggle(entry.id)}
+              onToggle={onToggle}
               {...handlersFor(entry.id)}
             />
           ))}

@@ -1,5 +1,7 @@
 import type { Host } from './host'
 
+const ECHO_WINDOW_MS = 5000
+
 export interface Serialized {
   text: string
   preview: string
@@ -16,7 +18,8 @@ export class Saver {
   private ready: Serialized | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private inflight: Promise<void> = Promise.resolve()
-  private recent: string[] = []
+  /** Texts we sent that Standard Notes has not echoed back yet. */
+  private pending: { text: string; at: number }[] = []
   /** The note text as last seen or sent. */
   lastText = ''
 
@@ -67,9 +70,28 @@ export class Saver {
     this.ready = null
   }
 
-  /** True when the text is one of our own recent saves coming back. */
+  /**
+   * True when the text is one of our own saves coming back. Echoes arrive
+   * within moments, so a save older than ECHO_WINDOW_MS no longer counts:
+   * an older version restored from note history is treated as a real change.
+   */
   isEcho(text: string): boolean {
-    return this.recent.includes(text)
+    const now = Date.now()
+    this.pending = this.pending.filter((p) => now - p.at < ECHO_WINDOW_MS)
+    const index = this.pending.findIndex((p) => p.text === text)
+    if (index !== -1) {
+      // Saves older than this one can no longer come back as echoes.
+      this.pending.splice(0, index)
+      return true
+    }
+    // Identical to what the editor already shows: nothing changed.
+    return text !== '' && text === this.lastText
+  }
+
+  /** Drops pending work and remembered texts, e.g. when the vault locks. */
+  forget(): void {
+    this.cancel()
+    this.pending = []
   }
 
   noteSeen(text: string): void {
@@ -78,7 +100,7 @@ export class Saver {
 
   private remember(text: string): void {
     this.lastText = text
-    this.recent.push(text)
-    if (this.recent.length > 20) this.recent.shift()
+    this.pending.push({ text, at: Date.now() })
+    if (this.pending.length > 20) this.pending.shift()
   }
 }

@@ -1,6 +1,6 @@
-import { useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { Icon } from './icons'
-import { SECRET_ATTRS, supportsTextSecurity, useReveal, useUi } from './context'
+import { SECRET_ATTRS, useReveal, useUi } from './context'
 
 interface SecretProps {
   value: string
@@ -16,46 +16,61 @@ interface SecretProps {
 /**
  * A field that stays masked until revealed, hides itself again after the
  * configured delay, and copies with automatic clipboard clearing.
+ *
+ * Masked values sit in real password inputs (not CSS-masked text), so mobile
+ * keyboards do not learn them, screen readers do not read them out, macOS
+ * Secure Input applies, and Ctrl+C cannot copy them. A multi-line secret
+ * cannot be a password input, so it is not rendered at all until revealed.
  */
 export const SecretField = ({ value, onInput, label, placeholder, multiline, mono, id }: SecretProps) => {
   const { readOnly, copy } = useUi()
   const [revealed, setRevealed] = useReveal(value)
-  const [editingHidden, setEditingHidden] = useState(false)
-  const masked = !revealed
-  const cssMask = supportsTextSecurity()
-  const className = `input ${mono ? 'mono' : ''} ${masked && cssMask ? 'masked' : ''}`
+  const className = `input ${mono ? 'mono' : ''}`
+  const areaRef = useRef<HTMLTextAreaElement>(null)
+  const [focusArea, setFocusArea] = useState(false)
+  useEffect(() => {
+    if (focusArea && revealed) {
+      areaRef.current?.focus()
+      setFocusArea(false)
+    }
+  }, [focusArea, revealed])
 
   let control
-  if (multiline) {
-    if (masked && !cssMask && !editingHidden) {
-      control = (
-        <button type="button" class="input masked-placeholder" onClick={() => setRevealed(true)} disabled={!value && readOnly}>
-          {value ? '•'.repeat(Math.min(value.length, 32)) : placeholder || 'Empty'}
-        </button>
-      )
-    } else {
-      control = (
-        <textarea
-          id={id}
-          class={className}
-          value={value}
-          rows={value.length > 120 ? 6 : 3}
-          placeholder={placeholder}
-          aria-label={label}
-          readOnly={readOnly}
-          onInput={(e) => onInput(e.currentTarget.value)}
-          onFocus={() => setEditingHidden(true)}
-          onBlur={() => setEditingHidden(false)}
-          {...SECRET_ATTRS}
-        />
-      )
-    }
+  if (multiline && !revealed) {
+    control = (
+      <button
+        type="button"
+        class="input masked-placeholder"
+        aria-label={`${label} (hidden). Reveal to view or edit`}
+        onClick={() => {
+          setRevealed(true)
+          setFocusArea(true)
+        }}
+      >
+        {value ? `${'•'.repeat(12)}  ${value.length} characters, hidden` : placeholder || 'Empty'}
+      </button>
+    )
+  } else if (multiline) {
+    control = (
+      <textarea
+        ref={areaRef}
+        id={id}
+        class={className}
+        value={value}
+        rows={value.length > 120 ? 6 : 3}
+        placeholder={placeholder}
+        aria-label={label}
+        readOnly={readOnly}
+        onInput={(e) => onInput(e.currentTarget.value)}
+        {...SECRET_ATTRS}
+      />
+    )
   } else {
     control = (
       <input
         id={id}
         class={className}
-        type={masked && !cssMask ? 'password' : 'text'}
+        type={revealed ? 'text' : 'password'}
         value={value}
         placeholder={placeholder}
         aria-label={label}

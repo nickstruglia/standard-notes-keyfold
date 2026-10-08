@@ -69,3 +69,15 @@ describe('detectKeyFormat', () => {
     expect((await detectKeyFormat('abandon '.repeat(12)))?.label).toMatch(/12-word seed phrase/)
   })
 })
+
+describe('Cardano bech32 keys', () => {
+  it('treats *_sk and *_xsk as secret and addresses as public', async () => {
+    const data = bech32.toWords(randomBytes(32))
+    for (const hrp of ['addr_xsk', 'root_xsk', 'acct_xsk', 'ed25519_sk']) {
+      expect((await detectKeyFormat(bech32.encode(hrp, data, 200)))?.level).toBe('ok')
+    }
+    for (const hrp of ['addr_xvk', 'addr', 'stake']) {
+      expect((await detectKeyFormat(bech32.encode(hrp, data, 200)))?.level).toBe('warn')
+    }
+  })
+})

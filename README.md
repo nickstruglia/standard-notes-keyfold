@@ -37,12 +37,19 @@ passphrases, creation dates, backup tracking and an optional second password.
 
 **Privacy and security**
 - Secrets are masked until revealed and hide themselves again after 30 seconds (configurable), or when the editor loses focus.
-- Copying a secret clears the clipboard after 30 seconds (configurable).
+- Copying a secret clears the clipboard after 30 seconds (configurable). Inside Standard Notes the browser only allows this during a click or tap, so if it is blocked, the clipboard clears on your next click, or with the **Clear now** button.
+- Hidden secrets are real password fields: phone keyboards do not learn them, screen readers do not read them aloud, and they cannot be copied with Ctrl+C. Multi-line secrets are not on the page at all until revealed.
 - Spellcheck, autocorrect, autofill and password-manager capture are turned off on secret fields, so words are not sent to cloud spellcheckers.
 - An optional **vault password** adds a second layer on top of Standard Notes' end-to-end encryption: AES-256-GCM with a key derived by PBKDF2-SHA256 (600,000 iterations). The vault auto-locks after inactivity.
 - **No network access.** The editor's Content Security Policy blocks every outgoing connection, and it has only two runtime dependencies (Preact and Standard Notes' component relay).
 - An optional privacy screen blurs the vault whenever the editor is not focused.
 - Follows Standard Notes' "Prevent editing" lock and its themes, adapts to narrow (mobile) and wide layouts, and never overwrites a note that already had other content.
+
+## Mobile
+
+The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so the vault needs an internet connection on a phone (the desktop app can keep an offline copy). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
+
+Not yet verified on real devices: Safari's engine (iPhones use WebKit) and Standard Notes themes inside the mobile apps. Try it with a dummy phrase first.
 
 ## Install
 
@@ -90,14 +97,14 @@ Requires Node.js 22.
 
 ```bash
 npm ci
-npm run dev        # then open http://localhost:5173/dev/host.html
+npm run dev        # then open http://localhost:5173/dev/host.html?sandbox=0
 npm run typecheck
 npm test           # unit tests (validators checked against @scure reference libraries and published test vectors)
 npm run build
 npm run test:e2e   # Playwright tests against the production build
 ```
 
-`dev/host.html` is a mock of the Standard Notes side of the plugin protocol. It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device.
+`dev/host.html` is a mock of the Standard Notes side of the plugin protocol. It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device.
 
 ## Deploy your own copy
 

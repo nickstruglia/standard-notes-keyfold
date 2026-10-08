@@ -69,9 +69,8 @@ test('creates a seed phrase entry, validates it and saves JSON to the note', asy
   await pastePhrase(page, PHRASE)
 
   await expect(app.getByText('Valid BIP39 checksum (12 words).')).toBeVisible()
-  // Words are masked until revealed.
-  const security = await app.getByLabel('Word 1', { exact: true }).evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-text-security'))
-  expect(security).toBe('disc')
+  // Words are real password fields until revealed.
+  await expect(app.getByLabel('Word 1', { exact: true })).toHaveAttribute('type', 'password')
 
   await expect.poll(() => noteText(page)).toContain('"yellow"')
   const doc = JSON.parse(await noteText(page))
@@ -94,21 +93,23 @@ test('reveals, copies with a toast, and hides all', async ({ page }) => {
   await add(app, 'Seed phrase')
   await pastePhrase(page, PHRASE)
   await app.getByRole('button', { name: 'Reveal words' }).click()
-  const security = () =>
-    app.getByLabel('Word 1', { exact: true }).evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-text-security'))
-  expect(await security()).toBe('none')
+  const word1 = app.getByLabel('Word 1', { exact: true })
+  await expect(word1).toHaveAttribute('type', 'text')
 
   await app.getByRole('button', { name: 'Copy phrase' }).click()
-  await expect(app.getByText('Seed phrase copied. Clipboard clears in 30s.')).toBeVisible()
+  await expect(app.getByText('Seed phrase copied. Clearing the clipboard in 30s.')).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(PHRASE)
 
   await app.getByRole('button', { name: 'Hide all' }).click()
-  expect(await security()).toBe('disc')
+  await expect(word1).toHaveAttribute('type', 'password')
 })
 
 test('detects private key formats', async ({ page }) => {
   const { app } = await open(page)
   await add(app, 'Private key')
+  // The key stays hidden (not even in the page) until revealed; clicking it reveals and focuses it.
+  await app.getByRole('button', { name: /Private key \(hidden\)/ }).click()
+  await expect(app.getByLabel('Private key', { exact: true })).toBeFocused()
   await app.getByLabel('Private key', { exact: true }).fill('KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617')
   await expect(app.getByText('WIF private key (Bitcoin mainnet, compressed)')).toBeVisible()
   await app.getByLabel('Private key', { exact: true }).fill('KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98618')
@@ -179,7 +180,11 @@ test('never overwrites a note that has other content', async ({ page }) => {
   await app.getByRole('button', { name: 'Convert to a vault' }).click()
   await app.getByRole('button', { name: 'Convert', exact: true }).click()
   await expect(app.getByText('Imported note')).toBeVisible()
-  await expect.poll(async () => (await noteJson(page))?.vault?.entries[0]?.notes).toBe('my old note')
+  // Imported into a hidden field, since old note text may well be a seed phrase.
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries[0]?.customFields?.[0]).toMatchObject({
+    value: 'my old note',
+    hidden: true,
+  })
 })
 
 test('applies Standard Notes themes', async ({ page }) => {
@@ -285,4 +290,61 @@ test('view options still work when the note is read-only', async ({ page }) => {
   await app.getByLabel('Compact').check()
   await expect(app.locator('.app.compact')).toHaveCount(1)
   expect(await noteText(page)).toBe(before)
+})
+
+test('clears the clipboard, with a button when the sandbox blocks doing it automatically', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]], { clipboardClearSeconds: 1 }))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Copy phrase' }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(SEEDS[0].words.join(' '))
+
+  const clearNow = app.getByRole('button', { name: 'Clear now' })
+  await expect(app.getByText('Clipboard cleared.').or(clearNow)).toBeVisible({ timeout: 5000 })
+  if (await clearNow.isVisible()) await clearNow.click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe(SEEDS[0].words.join(' '))
+})
+
+test('typing in an older entry keeps focus and every keystroke', async ({ page }) => {
+  const entries = SEEDS.map((e, i) => ({ ...e, updatedAt: `2026-0${i + 1}-01T00:00:00.000Z` }))
+  const { app } = await open(page, vaultText(entries))
+  // Sorted by last update, the oldest entry ("Cold storage") is at the bottom.
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: /^Details/ }).click()
+  const description = app.getByRole('textbox', { name: 'Description' })
+  await description.click()
+  await description.pressSequentially('hello world')
+  await expect(description).toBeFocused()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.find((e: any) => e.id === 'a')?.description).toBe('hello world')
+})
+
+test('a revision restored from note history replaces the current content', async ({ page }) => {
+  const { app } = await open(page)
+  await add(app, 'Other secret')
+  await app.getByLabel('Label').fill('first version')
+  await expect.poll(() => noteText(page)).toContain('first version')
+  const first = await noteText(page)
+  await app.getByLabel('Label').fill('second version')
+  await expect.poll(() => noteText(page)).toContain('second version')
+
+  // History restores happen well after the save they bring back.
+  await page.waitForTimeout(5500)
+  await page.evaluate((text) => (window as any).mockHost.restore(text), first)
+  await expect(app.getByLabel('Label')).toHaveValue('first version')
+  // And a later edit builds on the restored version.
+  await app.getByLabel('Label').fill('first version, edited')
+  await expect.poll(() => noteText(page)).toContain('first version, edited')
+})
+
+test('typing a space moves to the next word, as Android keyboards need', async ({ page }) => {
+  const { app } = await open(page)
+  await add(app, 'Seed phrase')
+  const word1 = app.getByLabel('Word 1', { exact: true })
+  // Android reports the space key as "Unidentified"; simulate the input event only.
+  await word1.focus()
+  await word1.evaluate((el: HTMLInputElement) => {
+    el.value = 'abandon '
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await expect(app.getByLabel('Word 2', { exact: true })).toBeFocused()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.[0]?.words?.[0]).toBe('abandon')
 })

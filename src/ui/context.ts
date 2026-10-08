@@ -40,6 +40,18 @@ export const useSection = (id: string, fallback: boolean): [boolean, (open: bool
   return [sectionOpen(id, fallback), (open) => setSectionOpen(id, open)]
 }
 
+/**
+ * Focuses an element on mount. The autofocus attribute is blocked inside
+ * cross-origin frames like the Standard Notes plugin iframe.
+ */
+export const useFocusOnMount = <T extends HTMLElement>(enabled = true) => {
+  const ref = useRef<T>(null)
+  useEffect(() => {
+    if (enabled) ref.current?.focus()
+  }, [])
+  return ref
+}
+
 /** Runs an async computation and keeps only the latest result. */
 export const useAsync = <T,>(compute: () => Promise<T>, deps: unknown[]): T | undefined => {
   const [value, setValue] = useState<T | undefined>(undefined)
@@ -67,14 +79,12 @@ export const useReveal = (activity?: unknown): [boolean, (next: boolean) => void
   return [revealed, setRevealed]
 }
 
-let textSecurity: boolean | undefined
-/** Chrome, Safari and recent Firefox can mask a plain text input with CSS. */
-export const supportsTextSecurity = (): boolean => {
-  if (textSecurity === undefined) {
-    textSecurity = typeof CSS !== 'undefined' && CSS.supports?.('-webkit-text-security', 'disc') === true
-  }
-  return textSecurity
-}
+/**
+ * Touch screens: masked words stay masked while typing, because on-screen
+ * keyboards learn whatever is typed into non-password fields.
+ */
+export const isTouchDevice = (): boolean =>
+  typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
 
 /** Attributes that keep secrets away from spellcheck services, autofill and password managers. */
 export const SECRET_ATTRS = {

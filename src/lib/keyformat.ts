@@ -209,10 +209,11 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
       case 'ltc':
         return { level: 'warn', label: 'Address (bech32)', detail: PUBLIC_WARNING }
       default:
-        if (bech.hrp.includes('_sk') || bech.hrp.includes('xprv')) {
+        // Cardano: addr_xsk, root_xsk, acct_xsk, ed25519_sk, ed25519e_sk... Check before the addr prefix.
+        if (/_x?sk$/.test(bech.hrp) || bech.hrp.includes('xprv')) {
           return { level: 'ok', label: `Bech32 secret key (${bech.hrp})`, detail: 'Checksum OK.' }
         }
-        if (bech.hrp.includes('_vk') || bech.hrp.includes('xpub') || bech.hrp.startsWith('addr')) {
+        if (/_x?vk$/.test(bech.hrp) || bech.hrp.includes('xpub') || bech.hrp.startsWith('addr') || bech.hrp.startsWith('stake')) {
           return { level: 'warn', label: `Bech32 (${bech.hrp})`, detail: PUBLIC_WARNING }
         }
         return { level: 'info', label: `Bech32 data (${bech.hrp})`, detail: 'Checksum OK.' }

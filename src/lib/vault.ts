@@ -224,6 +224,9 @@ export const normalizeVault = (raw: unknown): VaultData => {
   }
 }
 
+export const MIN_ITERATIONS = 1_000
+export const MAX_ITERATIONS = 10_000_000
+
 export interface EncryptedBlob {
   kdf: 'PBKDF2-SHA256'
   iterations: number
@@ -246,6 +249,10 @@ const isBlob = (v: unknown): v is EncryptedBlob => {
     o.kdf === 'PBKDF2-SHA256' &&
     o.cipher === 'AES-256-GCM' &&
     typeof o.iterations === 'number' &&
+    // Bounded so a tampered note can neither weaken the key nor hang unlock.
+    Number.isInteger(o.iterations) &&
+    o.iterations >= MIN_ITERATIONS &&
+    o.iterations <= MAX_ITERATIONS &&
     typeof o.salt === 'string' &&
     typeof o.iv === 'string' &&
     typeof o.ciphertext === 'string'

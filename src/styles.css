@@ -126,10 +126,6 @@ select.input {
 .mono {
   font-family: var(--mono);
 }
-.masked {
-  -webkit-text-security: disc;
-  text-security: disc;
-}
 .masked-placeholder {
   text-align: left;
   cursor: pointer;
@@ -1017,6 +1013,22 @@ select.input {
 }
 .app.compact .editor-footer {
   margin-top: 8px;
+}
+
+/* Touch screens: 16px text stops iOS from zooming on focus, and larger
+   targets are easier to hit (and to miss Delete next to Archive). */
+@media (pointer: coarse) {
+  .input,
+  .app.compact .input {
+    font-size: 16px;
+  }
+  .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+  .entry-actions {
+    gap: 6px;
+  }
 }
 
 @media (max-width: 560px) {

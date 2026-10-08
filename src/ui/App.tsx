@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { UiContext, type ConfirmOptions, type Ui } from './context'
 import { EditorDatalists, EntryEditor, type EntryHandlers } from './EntryEditor'
-import { EntryList, type Filter, groupEntries, visibleEntries } from './EntryList'
+import { EntryList, type Filter, type LayoutSnapshot, groupEntries, snapshotOf, stabilize, visibleEntries } from './EntryList'
 import { EntryStack } from './EntryStack'
 import { Toolbar, type ViewPrefs } from './Toolbar'
 import { Settings } from './Settings'
@@ -23,7 +23,7 @@ import {
   serializeEncrypted,
   serializePlain,
 } from '../lib/vault'
-import { type VaultKey, decryptVault, deriveKey, encryptVault, sameSalt, unlockVault } from '../lib/vaultCrypto'
+import { DEFAULT_ITERATIONS, type VaultKey, decryptVault, deriveKey, encryptVault, sameSalt, unlockVault } from '../lib/vaultCrypto'
 import { newId } from '../lib/encoding'
 import type { Host } from '../sn/host'
 import { Saver } from '../sn/saver'
@@ -38,6 +38,18 @@ type Phase =
 type View = { type: 'list' } | { type: 'entry'; id: string } | { type: 'settings' }
 
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
+
+// Rendered once: 2048 options are too many to diff on every keystroke.
+const BIP39_DATALIST = (
+  <datalist id="bip39-words">
+    {BIP39_ENGLISH.map((w) => (
+      <option value={w} />
+    ))}
+  </datalist>
+)
+const EDITOR_DATALISTS = <EditorDatalists />
+
+const CHANGED_DURING_ACTION = 'The note changed while this was running. Please try again.'
 
 export const App = ({ host }: { host: Host }) => {
   const [phase, setPhase] = useState<Phase>({ name: 'connecting' })
@@ -88,6 +100,17 @@ export const App = ({ host }: { host: Host }) => {
   const readOnly = noteLocked || phase.name !== 'ready'
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
+  const noteLockedRef = useRef(noteLocked)
+  noteLockedRef.current = noteLocked
+
+  /** Fails a multi-step action if a newer note arrived or editing was disabled meanwhile. */
+  const guard = () => {
+    const seq = incomingSeq.current
+    return () => {
+      if (seq !== incomingSeq.current) throw new Error(CHANGED_DURING_ACTION)
+      if (readOnlyRef.current) throw new Error('This note is read-only right now.')
+    }
+  }
 
   /** Applies a local change and queues a save. */
   const update = useCallback((change: (v: VaultData) => VaultData) => {
@@ -121,6 +144,8 @@ export const App = ({ host }: { host: Host }) => {
             try {
               const data = await decryptVault(parsed.blob, key)
               if (seq !== incomingSeq.current) return
+              // Drop any edit made during decryption: it was based on the older version.
+              saver.cancel()
               showVault(data)
               setPhase({ name: 'ready' })
               return
@@ -182,10 +207,19 @@ export const App = ({ host }: { host: Host }) => {
     const parsed = parseNote(saver.lastText)
     if (parsed.kind !== 'encrypted') return
     keyRef.current = null
+    saver.forget()
     showVault(emptyVault())
     setHideEpoch((n) => n + 1)
     setView({ type: 'list' })
     setExpanded(new Set())
+    setSections({})
+    setNewEntryId(null)
+    // Toasts can hold secrets (an Undo keeps the deleted entry); drop them.
+    setToasts([])
+    setDialog((open) => {
+      open?.resolve(false)
+      return null
+    })
     setPhase({ name: 'locked', blob: parsed.blob })
   }, [saver])
 
@@ -207,10 +241,29 @@ export const App = ({ host }: { host: Host }) => {
 
   const unlock = async (password: string) => {
     if (phase.name !== 'locked') return
-    const { vault: data, vaultKey } = await unlockVault(phase.blob, password)
+    const seq = incomingSeq.current
+    let { vault: data, vaultKey } = await unlockVault(phase.blob, password)
+    if (seq !== incomingSeq.current) {
+      // A newer version arrived while the key was being derived; open that one.
+      const latest = parseNote(saver.lastText)
+      if (latest.kind !== 'encrypted' || !sameSalt(latest.blob, vaultKey)) throw new Error(CHANGED_DURING_ACTION)
+      data = await decryptVault(latest.blob, vaultKey)
+    }
     keyRef.current = vaultKey
     showVault(data)
     setPhase({ name: 'ready' })
+    if (vaultKey.iterations < DEFAULT_ITERATIONS) {
+      // Saved with a weaker key setting: re-encrypt at the current strength.
+      const check = guard()
+      const stronger = await deriveKey(password)
+      try {
+        check()
+      } catch {
+        return
+      }
+      keyRef.current = stronger
+      saver.schedule(() => serialize(vaultRef.current))
+    }
   }
 
   /** Confirms the current password against what is saved in the note. */
@@ -222,21 +275,29 @@ export const App = ({ host }: { host: Host }) => {
   }
 
   const setPassword = async (password: string) => {
-    keyRef.current = await deriveKey(password)
+    const check = guard()
+    const key = await deriveKey(password)
+    check()
+    keyRef.current = key
     setHasPassword(true)
     saver.schedule(() => serialize(vaultRef.current))
     toast('Vault password set. The note is now encrypted with it.', 'success')
   }
 
   const changePassword = async (current: string, next: string) => {
+    const check = guard()
     await verifyPassword(current)
-    keyRef.current = await deriveKey(next)
+    const key = await deriveKey(next)
+    check()
+    keyRef.current = key
     saver.schedule(() => serialize(vaultRef.current))
     toast('Vault password changed.', 'success')
   }
 
   const removePassword = async (current: string) => {
+    const check = guard()
     await verifyPassword(current)
+    check()
     keyRef.current = null
     setHasPassword(false)
     saver.schedule(() => serialize(vaultRef.current))
@@ -251,17 +312,27 @@ export const App = ({ host }: { host: Host }) => {
     }
     const secs = settingsRef.current.clipboardClearSeconds
     const id = ++copySeq.current
-    toast(secs ? `${what} copied. Clipboard clears in ${secs}s.` : `${what} copied.`, 'success')
+    toast(secs ? `${what} copied. Clearing the clipboard in ${secs}s.` : `${what} copied.`, 'success')
     if (!secs) return
     setTimeout(async () => {
       if (id !== copySeq.current) return
-      const cleared = await clearClipboard()
-      toast(
-        cleared ? 'Clipboard cleared.' : 'Could not clear the clipboard automatically. Copy something else to overwrite it.',
-        cleared ? 'info' : 'error',
-        undefined,
-        cleared ? 3000 : 8000,
-      )
+      if (await clearClipboard()) {
+        toast('Clipboard cleared.', 'info', undefined, 3000)
+        return
+      }
+      // Inside Standard Notes the browser only allows clipboard writes during
+      // a click or tap, so clear on the next one (or the button).
+      let done = false
+      const clearOnce = async () => {
+        if (done || id !== copySeq.current) return
+        if (await clearClipboard()) {
+          done = true
+          window.removeEventListener('click', clearOnce, true)
+          toast('Clipboard cleared.', 'info', undefined, 3000)
+        }
+      }
+      window.addEventListener('click', clearOnce, true)
+      toast('The browser blocked clearing the clipboard. It clears on your next click or tap.', 'error', { label: 'Clear now', run: clearOnce }, 20000)
     }, secs * 1000)
   }, [toast])
 
@@ -270,16 +341,20 @@ export const App = ({ host }: { host: Host }) => {
     [],
   )
 
-  const ui: Ui = {
-    settings,
-    readOnly,
-    hideEpoch,
-    copy,
-    toast,
-    confirm,
-    sectionOpen: (id, fallback) => sections[id] ?? fallback,
-    setSectionOpen: (id, open) => setSections((all) => ({ ...all, [id]: open })),
-  }
+  // One stable object per change, so context consumers only re-render when needed.
+  const ui: Ui = useMemo(
+    () => ({
+      settings,
+      readOnly,
+      hideEpoch,
+      copy,
+      toast,
+      confirm,
+      sectionOpen: (id, fallback) => sections[id] ?? fallback,
+      setSectionOpen: (id, open) => setSections((all) => ({ ...all, [id]: open })),
+    }),
+    [settings, readOnly, hideEpoch, copy, toast, confirm, sections],
+  )
 
   // View preferences live in the note's settings so they follow you across
   // devices; local overrides keep them working when the note is read-only.
@@ -296,22 +371,31 @@ export const App = ({ host }: { host: Host }) => {
     update((v) => ({ ...v, settings: { ...v.settings, ...patch } }))
   }
 
-  const toggleEntry = (id: string) =>
-    setExpanded((open) => {
-      if (open.has(id)) {
-        const next = new Set(open)
-        next.delete(id)
-        return next
-      }
-      return viewPrefs.singleExpand ? new Set([id]) : new Set(open).add(id)
-    })
+  const singleExpand = viewPrefs.singleExpand
+  const toggleEntry = useCallback(
+    (id: string) => {
+      setNewEntryId(null)
+      setExpanded((open) => {
+        if (open.has(id)) {
+          const next = new Set(open)
+          next.delete(id)
+          return next
+        }
+        return singleExpand ? new Set([id]) : new Set(open).add(id)
+      })
+    },
+    [singleExpand],
+  )
 
-  const toggleGroup = (key: string) =>
-    setCollapsedGroups((closed) => {
-      const next = new Set(closed)
-      if (!next.delete(key)) next.add(key)
-      return next
-    })
+  const toggleGroup = useCallback(
+    (key: string) =>
+      setCollapsedGroups((closed) => {
+        const next = new Set(closed)
+        if (!next.delete(key)) next.add(key)
+        return next
+      }),
+    [],
+  )
 
   /** Shows a newly created entry: opened, scrolled to, label focused. */
   const reveal = (id: string) => {
@@ -382,28 +466,63 @@ export const App = ({ host }: { host: Host }) => {
   const updateSettings = (patch: Partial<VaultSettings>) => update((v) => ({ ...v, settings: { ...v.settings, ...patch } }))
 
   const convertForeign = async (text: string) => {
+    const seq = incomingSeq.current
     const ok = await confirm({
       title: 'Convert this note?',
-      message: 'The existing text is moved into the notes of a new "Imported note" entry, and the note becomes a vault.',
+      message: 'The existing text is moved into a hidden field of a new "Imported note" entry, and the note becomes a vault.',
       confirmLabel: 'Convert',
     })
-    if (!ok) return
+    // Another device may have saved a vault while the dialog was open.
+    if (!ok || seq !== incomingSeq.current || noteLockedRef.current) return
     const data = emptyVault()
-    data.entries.push(createEntry('other', { label: 'Imported note', notes: text }))
+    // The old text may well be a seed phrase, so it goes into a hidden field.
+    data.entries.push(
+      createEntry('other', {
+        label: 'Imported note',
+        customFields: [{ id: newId(), label: 'Imported text', value: text, hidden: true }],
+      }),
+    )
     showVault(data)
     setPhase({ name: 'ready' })
     saver.schedule(() => serialize(data))
   }
 
-  const entries = visibleEntries(vault.entries, filter, viewPrefs.sort, query, settings.backupReminderMonths)
-  const groups = groupEntries(entries, viewPrefs.groupBy)
   const selected = view.type === 'entry' ? vault.entries.find((e) => e.id === view.id) ?? null : null
   const dueCount = vault.entries.filter((e) => isBackupDue(e, settings.backupReminderMonths)).length
-  const handlersFor = (id: string): EntryHandlers => ({
-    onUpdate: (patch) => updateEntry(id, patch),
-    onDelete: () => deleteEntry(id),
-    onDuplicate: () => duplicateEntry(id),
-  })
+
+  // While an entry is open, entries keep their place and group: editing bumps
+  // "last updated" (and may change a chain or tag), and moving the card under
+  // the cursor would drop focus mid-word. The order refreshes once it closes.
+  const editing = viewPrefs.layout === 'stacked' ? expanded.size > 0 : selected !== null
+  const layoutKey = [viewPrefs.layout, viewPrefs.sort, viewPrefs.groupBy, filter, query].join('|')
+  const layoutRef = useRef<{ key: string; snapshot: LayoutSnapshot } | null>(null)
+  const previous = editing && layoutRef.current?.key === layoutKey ? layoutRef.current.snapshot : null
+  let entries = visibleEntries(vault.entries, filter, viewPrefs.sort, query, settings.backupReminderMonths)
+  if (previous) {
+    // Keep showing an entry that stopped matching the filter because of the edit.
+    const shown = new Set(entries.map((e) => e.id))
+    entries = [...entries, ...vault.entries.filter((e) => !shown.has(e.id) && previous.groupOf.has(e.id))]
+  }
+  let groups = groupEntries(entries, viewPrefs.groupBy)
+  if (previous) groups = stabilize(groups, previous)
+  layoutRef.current = { key: layoutKey, snapshot: snapshotOf(groups) }
+
+  // Stable per-entry handlers, so unchanged cards can skip re-rendering.
+  const actionsRef = useRef({ updateEntry, deleteEntry, duplicateEntry })
+  actionsRef.current = { updateEntry, deleteEntry, duplicateEntry }
+  const handlerCache = useRef(new Map<string, EntryHandlers>())
+  const handlersFor = (id: string): EntryHandlers => {
+    let handlers = handlerCache.current.get(id)
+    if (!handlers) {
+      handlers = {
+        onUpdate: (patch) => actionsRef.current.updateEntry(id, patch),
+        onDelete: () => actionsRef.current.deleteEntry(id),
+        onDuplicate: () => actionsRef.current.duplicateEntry(id),
+      }
+      handlerCache.current.set(id, handlers)
+    }
+    return handlers
+  }
 
   const emptyState = (
     <div class="empty">
@@ -464,7 +583,10 @@ export const App = ({ host }: { host: Host }) => {
             setCollapsedGroups(new Set())
             setExpanded(new Set(entries.map((e) => e.id)))
           }}
-          onCollapseAll={() => setExpanded(new Set())}
+          onCollapseAll={() => {
+            setNewEntryId(null)
+            setExpanded(new Set())
+          }}
           onSettings={() => setView({ type: 'settings' })}
           hasPassword={hasPassword}
           onLock={lock}
@@ -577,12 +699,8 @@ export const App = ({ host }: { host: Host }) => {
           </div>
         )}
       </div>
-      <EditorDatalists />
-      <datalist id="bip39-words">
-        {BIP39_ENGLISH.map((w) => (
-          <option value={w} />
-        ))}
-      </datalist>
+      {EDITOR_DATALISTS}
+      {BIP39_DATALIST}
       {dialog && (
         <ConfirmDialog
           dialog={dialog}
