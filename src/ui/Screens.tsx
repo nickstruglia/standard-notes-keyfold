@@ -122,7 +122,12 @@ export const ConnectingScreen = ({ slow }: { slow: boolean }) => (
   <div class="screen">
     <div class="card">
       <p class="muted">Connecting to Standard Notes…</p>
-      {slow && <p class="small muted">Still waiting. Try closing and reopening the note.</p>}
+      {slow && (
+        <p class="small muted">
+          Still waiting. If Standard Notes asks to activate Keyfold, choose Continue; otherwise, close and reopen the
+          note.
+        </p>
+      )}
     </div>
   </div>
 )
