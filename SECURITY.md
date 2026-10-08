@@ -36,7 +36,7 @@ through `postMessage`.
 - Built to run in Standard Notes' plugin sandbox (`allow-scripts`, no `allow-same-origin`): no browser storage, and the build is a classic script so it loads without CORS headers.
 - The deploy workflow gives its build job read-only permissions and installs dependencies without install scripts; only the deploy job can publish.
 - Key-derivation settings read from a note are bounded, and a vault saved with fewer iterations than the current default is re-encrypted at the default after unlock.
-- Only two runtime dependencies: `preact` and `@standardnotes/component-relay`. Validators (BIP39, Base58Check, Bech32) are small local implementations, tested against the audited `@scure` libraries.
+- One runtime dependency: `preact`. The Standard Notes plugin protocol (`src/sn/relay.ts`) is implemented locally: it accepts messages only from the parent window, and replies to the app's exact origin when it has a web origin. Validators (BIP39, Base58Check, Bech32, CRC-24) are small local implementations, tested against the audited `@scure` libraries and real keys.
 - Keyfold does not generate seed phrases or keys. Generate them on a hardware wallet, with `ssh-keygen`, `gpg` or `age-keygen`, or on another dedicated device.
 - Key recognition only reads structure and checksums. Keyfold never decrypts or uses your keys.
 - Printing is disabled in the editor's print stylesheet, to keep secrets out of printer queues.

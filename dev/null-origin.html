@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mock host with a "null" origin</title>
+    <style>
+      html, body, iframe { margin: 0; width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Standard Notes' mobile apps run the web app from local files, so plugins
+      see their parent's origin as "null". Sandboxing the mock host without
+      allow-same-origin reproduces that.
+    -->
+    <iframe id="host" title="host" sandbox="allow-scripts allow-modals allow-popups allow-forms"></iframe>
+    <script>
+      document.getElementById('host').src = 'host.html' + location.search
+    </script>
+  </body>
+</html>

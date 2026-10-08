@@ -52,7 +52,7 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 - Copying a secret clears the clipboard after 30 seconds. Inside Standard Notes the browser only allows this during a click or tap, so if it is blocked the clipboard clears on your next click, or with the **Clear now** button.
 - Spellcheck, autocorrect, autofill and password-manager capture are off on secret fields, so nothing is sent to cloud spellcheckers.
 - An optional **vault password** adds a second layer on top of Standard Notes' end-to-end encryption: AES-256-GCM with a key derived by PBKDF2-SHA256 (600,000 iterations). The vault auto-locks after inactivity.
-- **No network access.** The Content Security Policy blocks every outgoing connection, and there are only two runtime dependencies (Preact and Standard Notes' component relay).
+- **No network access.** The Content Security Policy blocks every outgoing connection, and the only runtime dependency is Preact. Keyfold talks to Standard Notes with its own small implementation of the plugin message protocol.
 - An optional privacy screen blurs the vault whenever the editor is not focused.
 - Follows Standard Notes' "Prevent editing" lock and its themes, and never overwrites a note that already had other content.
 
@@ -115,7 +115,7 @@ npm run build
 npm run test:e2e   # Playwright tests against the production build, on desktop and phone screen sizes
 ```
 
-`dev/host.html` is a mock of the Standard Notes side of the plugin protocol. It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device.
+`dev/host.html` is a mock of the Standard Notes side of the plugin protocol (`dev/null-origin.html` wraps it so the app's origin is "null", as in the mobile apps). It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device.
 
 ## Deploy your own copy
 

@@ -24,7 +24,6 @@
     "main": "index.html"
   },
   "dependencies": {
-    "@standardnotes/component-relay": "2.2.2",
     "preact": "10.29.8"
   },
   "devDependencies": {

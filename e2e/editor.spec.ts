@@ -390,3 +390,18 @@ test('stores an SSH key and an expiring API token alongside crypto entries', asy
   expect(await preview(page)).toBe('Keyfold: 1 SSH key, 1 API key')
   expect(errors).toEqual([])
 })
+
+test('works when the Standard Notes app has a "null" origin, as in the mobile apps', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (err) => errors.push(err.message))
+  await page.goto('/dev/null-origin.html')
+  const app = page.frameLocator('#host').frameLocator('#editor')
+  await expect(app.getByText('No keys yet.')).toBeVisible()
+  await add(app, 'Seed phrase')
+  await app.getByLabel('Label').fill('From a phone')
+  const host = page.frames().find((f) => f.url().includes('/dev/host.html'))!
+  await expect
+    .poll(() => host.evaluate(() => (window as any).mockHost.note.content.text as string))
+    .toContain('From a phone')
+  expect(errors).toEqual([])
+})

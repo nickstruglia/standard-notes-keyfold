@@ -1,7 +1,7 @@
-import ComponentRelay from '@standardnotes/component-relay'
+import { StandardNotesRelay } from './relay'
 
 // The editor talks to whatever hosts it through this interface: the real
-// Standard Notes app (via the official component relay), or an in-memory
+// Standard Notes app (through its plugin message protocol, see relay.ts), or an in-memory
 // demo when the page is opened directly in a browser.
 
 export interface HostNote {
@@ -33,7 +33,7 @@ const isLocked = (item: RelayItem): boolean =>
   item.content?.appData?.['org.standardnotes.sn']?.locked === true
 
 export const createStandardNotesHost = (): Host => {
-  const relay = new ComponentRelay({ targetWindow: window })
+  const relay = new StandardNotesRelay(window)
   let current: RelayItem | null = null
 
   return {
@@ -54,8 +54,7 @@ export const createStandardNotesHost = (): Host => {
       item.content.text = text
       item.content.preview_plain = preview
       item.content.preview_html = ''
-      // Our own Saver already debounces; skip the relay's debouncer.
-      relay.saveItem(item, undefined, true)
+      relay.saveItem(item)
     },
   }
 }
