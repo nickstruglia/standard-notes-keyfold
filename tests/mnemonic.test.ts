@@ -3,7 +3,7 @@ import { generateMnemonic, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { BIP39_ENGLISH } from '../src/lib/wordlist'
 import { sha256, toHex, utf8 } from '../src/lib/encoding'
-import { checkMnemonic, electrumSeedType, expandPrefix, splitPhrase, suggestWords } from '../src/lib/mnemonic'
+import { checkMnemonic, electrumSeedType, expandPrefix, parsePhrase, splitPhrase, suggestWords } from '../src/lib/mnemonic'
 
 const words = (phrase: string) => phrase.split(' ')
 
@@ -90,6 +90,39 @@ describe('Electrum seeds', () => {
 describe('word helpers', () => {
   it('splits pasted phrases with numbering, commas and newlines', () => {
     expect(splitPhrase('1. Abandon\n2) ability, 3: able  4 about')).toEqual(['abandon', 'ability', 'able', 'about'])
+  })
+
+  it('places numbered words by number when copied row by row from columns', () => {
+    const phrase = 'legal winner thank year wave sausage worth useful legal winner thank yellow'.split(' ')
+    // Two columns (1-6, 7-12) copied row by row.
+    const twoCol = phrase.slice(0, 6).map((w, i) => `${i + 1}. ${w}  ${i + 7}. ${phrase[i + 6]}`).join('\n')
+    const parsed = parsePhrase(twoCol)
+    expect(parsed.words).toEqual(phrase)
+    expect(parsed.reordered).toBe(true)
+    expect(parsed.firstNumber).toBe(1)
+    // Three columns of 8 (24 words).
+    const p24 = Array.from({ length: 24 }, (_, i) => `w${String.fromCharCode(97 + i)}`)
+    const threeCol = Array.from({ length: 8 }, (_, r) => [r, r + 8, r + 16].map((i) => `${i + 1}) ${p24[i]}`).join('\t')).join('\n')
+    expect(parsePhrase(threeCol).words).toEqual(p24)
+    // Words 13-24 keep their numbers.
+    expect(parsePhrase('13. alpha 14. beta 15. gamma').firstNumber).toBe(13)
+    // Without numbers on every word, the text order is kept.
+    expect(parsePhrase('2. beta alpha').words).toEqual(['beta', 'alpha'])
+    expect(parsePhrase('1. alpha 1. beta').reordered).toBe(false)
+  })
+
+  it('drops punctuation and number markers of every common style', () => {
+    expect(splitPhrase('1 - abandon 2 - ability')).toEqual(['abandon', 'ability'])
+    expect(splitPhrase('(1) legal #2 winner 3-thank a) year "wave", sausage.')).toEqual([
+      'legal',
+      'winner',
+      'thank',
+      'year',
+      'wave',
+      'sausage',
+    ])
+    expect(splitPhrase('legal\u200Bwinner | thank')).toEqual(['legal', 'winner', 'thank'])
+    expect(splitPhrase('acto arte ábaco')).toEqual(['acto', 'arte', 'ábaco'.normalize('NFKD')])
   })
 
   it('expands unique 4-letter prefixes only', () => {

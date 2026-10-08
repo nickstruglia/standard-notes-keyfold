@@ -10,8 +10,8 @@ Keyfold is a [Standard Notes](https://standardnotes.com) plugin for crypto seed 
 
 **Seed phrases of any length**
 - 12, 15, 18, 21 and 24-word BIP39 phrases, 20/33-word SLIP-39 shares, 25-word Monero seeds, or any custom count up to 48 words.
-- Each word sits in its own numbered, masked field. Paste a whole phrase into word 1 and it fills the grid.
-- BIP39 checks: every word is checked against the official wordlist, the checksum is verified, typos get "did you mean" suggestions, and 4-letter prefixes expand to the full word.
+- Each word sits in its own numbered, masked field. Paste a whole phrase into word 1 and it fills the grid. Numbered phrases copied from a backup sheet with several columns are put back in order.
+- BIP39 checks: every word is checked against the official wordlist, the checksum is verified, typos get "did you mean" suggestions, and English 4-letter abbreviations can be expanded with one click. Words are never changed without you asking: for BIP39 phrases in other languages or old Electrum seeds, choose **Other**.
 - Electrum 2.0+ seeds are validated and their type shown (standard, segwit, 2FA).
 - A hidden field for the BIP39 passphrase ("25th word"), plus a visible hint for it.
 
@@ -47,7 +47,7 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 
 ## Privacy and security
 
-- Secrets are masked until revealed and hide themselves again after 30 seconds (configurable), or when the editor loses focus.
+- Secrets are masked until revealed and hide themselves again after 30 seconds (configurable), or when the editor loses focus. With a keyboard, a seed word shows only while you type it, never just because it has focus.
 - Hidden secrets are real password fields: phone keyboards do not learn them, screen readers do not read them aloud, and they cannot be copied with Ctrl+C. Multi-line keys are not on the page at all until revealed.
 - Copying a secret clears the clipboard after 30 seconds. Inside Standard Notes the browser only allows this during a click or tap, so if it is blocked the clipboard clears on your next click, or with the **Clear now** button.
 - Spellcheck, autocorrect, autofill and password-manager capture are off on secret fields, so nothing is sent to cloud spellcheckers.

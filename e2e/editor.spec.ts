@@ -84,9 +84,66 @@ test('creates a seed phrase entry, validates it and saves JSON to the note', asy
   // A typo is flagged with suggestions.
   await app.getByLabel('Word 3', { exact: true }).fill('thnk')
   await app.getByLabel('Word 4', { exact: true }).focus()
-  await expect(app.getByText('Not in the BIP39 wordlist: #3.')).toBeVisible()
+  await expect(app.getByText(/Not in the English BIP39 wordlist: #3\./)).toBeVisible()
 
   expect(errors).toEqual([])
+})
+
+test('never rewrites a word on its own, and expands abbreviations only on request', async ({ page }) => {
+  const { app } = await open(page)
+  await add(app, 'Seed phrase')
+  // "acto" is a Spanish BIP39 word that happens to start the English "actor".
+  const word1 = app.getByLabel('Word 1', { exact: true })
+  await word1.fill('acto')
+  await app.getByLabel('Word 2', { exact: true }).focus()
+  await expect(word1).toHaveValue('acto')
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries[0]?.words[0]).toBe('acto')
+  // English shorthand can be expanded with a button.
+  await app.getByRole('button', { name: 'Expand abbreviated words' }).click()
+  await expect(word1).toHaveValue('actor')
+})
+
+test('places numbered words by number when pasted from a sheet with columns', async ({ page }) => {
+  const { app } = await open(page)
+  await add(app, 'Seed phrase')
+  const words = PHRASE.split(' ')
+  const rows = words.slice(0, 6).map((w, i) => `${i + 1}. ${w}   ${i + 7}. ${words[i + 6]}`).join('\n')
+  await pastePhrase(page, rows)
+  await expect(app.getByText('Valid BIP39 checksum (12 words).')).toBeVisible()
+  await expect(app.getByText(/Placed the pasted words by their numbers/)).toBeVisible()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries[0]?.words.join(' ')).toBe(PHRASE)
+})
+
+test('focus alone never shows a seed word in clear', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'touch screens never reveal the typed word')
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await app.getByText('Cold storage').click()
+  const word1 = app.getByLabel('Word 1', { exact: true })
+  await word1.focus()
+  await page.keyboard.press('Tab')
+  await expect(app.getByLabel('Word 2', { exact: true })).toHaveAttribute('type', 'password')
+  // Typing shows the word being typed.
+  await page.keyboard.press('End')
+  await page.keyboard.type('x')
+  await expect(app.getByLabel('Word 2', { exact: true })).toHaveAttribute('type', 'text')
+  await page.keyboard.press('Tab')
+  await expect(app.getByLabel('Word 2', { exact: true })).toHaveAttribute('type', 'password')
+})
+
+test('input-method keys do not move between words', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'one engine check is enough')
+  const { app } = await open(page)
+  await add(app, 'Seed phrase')
+  const word1 = app.getByLabel('Word 1', { exact: true })
+  await word1.focus()
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.imeSetComposition', { text: 'あい', selectionStart: 2, selectionEnd: 2 })
+  // An input method's Enter arrives as keyCode 229 while composing.
+  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 229 })
+  await cdp.send('Input.insertText', { text: 'あい' })
+  await expect(word1).toBeFocused()
+  await expect(word1).toHaveValue('あい')
+  await expect(app.getByLabel('Word 2', { exact: true })).toHaveValue('')
 })
 
 test('reveals, copies with a toast, and hides all', async ({ page }) => {
@@ -292,7 +349,7 @@ test('sections inside an entry collapse to a one-line summary', async ({ page })
 
   const seedSection = app.getByRole('button', { name: /^Seed phrase/ })
   await seedSection.click()
-  await expect(seedSection).toContainText('BIP39 · 12 words')
+  await expect(seedSection).toContainText('BIP39 (English) · 12 words')
   await expect(app.getByLabel('Word 1', { exact: true })).toHaveCount(0)
 })
 

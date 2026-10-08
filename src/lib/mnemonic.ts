@@ -4,7 +4,7 @@ import { hasSubtleCrypto, hmacSha512, sha256, toHex, utf8 } from './encoding'
 export type MnemonicScheme = 'bip39' | 'electrum' | 'aezeed' | 'slip39' | 'monero' | 'other'
 
 export const SCHEMES: { id: MnemonicScheme; label: string; counts: number[] }[] = [
-  { id: 'bip39', label: 'BIP39', counts: [12, 15, 18, 21, 24] },
+  { id: 'bip39', label: 'BIP39 (English)', counts: [12, 15, 18, 21, 24] },
   { id: 'electrum', label: 'Electrum', counts: [12] },
   { id: 'aezeed', label: 'Aezeed (LND)', counts: [24] },
   { id: 'slip39', label: 'SLIP-39 share (Shamir)', counts: [20, 33] },
@@ -25,17 +25,70 @@ export const normalizeWord = (word: string): string => word.normalize('NFKD').tr
 
 export const isBip39Word = (word: string): boolean => WORD_INDEX.has(normalizeWord(word))
 
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g
+const EDGE_PUNCTUATION = /^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu
+
+export interface ParsedPhrase {
+  words: string[]
+  /** Set when every word carried its own number ("1. abandon", "#2 ability"): the first number. */
+  firstNumber?: number
+  /** The words were reordered by their numbers (e.g. copied from a sheet with several columns). */
+  reordered: boolean
+}
+
+/**
+ * Splits pasted text into words. Number markers ("1.", "2)", "(3)", "#4",
+ * "5 -") and punctuation are dropped. When every word has a distinct number
+ * and the numbers form a run, words are placed by number, so phrases copied
+ * row by row from a sheet with several columns come out in the right order.
+ */
+export const parsePhrase = (text: string): ParsedPhrase => {
+  const tokens = text
+    .replace(ZERO_WIDTH, ' ')
+    // "1.abandon", "1-legal", "#1abandon": separate the marker from the word.
+    .replace(/(\d+)[.):\-]*(?=\p{L})/gu, '$1 ')
+    .split(/[\s,;|]+/)
+  const numbered: { n: number; word: string }[] = []
+  const words: string[] = []
+  let pending: number | null = null
+  let allNumbered = true
+  for (const token of tokens) {
+    // "a)" and "b." are list markers, not words.
+    if (/^\p{L}[.)]$/u.test(token)) continue
+    const trimmed = token.replace(EDGE_PUNCTUATION, '')
+    if (!trimmed) continue
+    if (/^\d+$/.test(trimmed)) {
+      pending = Number(trimmed)
+      continue
+    }
+    if (!/\p{L}/u.test(trimmed)) continue
+    const word = normalizeWord(trimmed)
+    words.push(word)
+    if (pending === null) allNumbered = false
+    else numbered.push({ n: pending, word })
+    pending = null
+  }
+  if (allNumbered && words.length > 1) {
+    const sorted = [...numbered].sort((a, b) => a.n - b.n)
+    const contiguous = sorted.every((x, i) => x.n === sorted[0].n + i)
+    if (contiguous && sorted[0].n >= 1) {
+      return {
+        words: sorted.map((x) => x.word),
+        firstNumber: sorted[0].n,
+        reordered: sorted.some((x, i) => x !== numbered[i]),
+      }
+    }
+  }
+  return { words, reordered: false }
+}
+
 /** Split pasted text ("1. abandon 2. ability", newlines, commas...) into words. */
-export const splitPhrase = (text: string): string[] =>
-  text
-    .replace(/\b\d+[.):]\s*/g, ' ')
-    .split(/[\s,;]+/)
-    .map(normalizeWord)
-    .filter((w) => w && !/^\d+$/.test(w))
+export const splitPhrase = (text: string): string[] => parsePhrase(text).words
 
 /**
  * BIP39 words are unique in their first four letters, so a 4+ letter
- * prefix that matches exactly one word can be expanded safely.
+ * prefix that matches exactly one word can be expanded. Only on request:
+ * words from other wordlists can look like English prefixes (acto, arte).
  */
 export const expandPrefix = (word: string): string => {
   const w = normalizeWord(word)
@@ -133,7 +186,7 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
     const list = unknownWords.map((i) => `#${i + 1}`).join(', ')
     return {
       status: 'invalid',
-      message: `Not in the BIP39 wordlist: ${list}.`,
+      message: `Not in the English BIP39 wordlist: ${list}. For other languages or old Electrum seeds, choose Other.`,
       unknownWords,
     }
   }

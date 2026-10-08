@@ -1,7 +1,7 @@
-import { useRef, useState } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { SECRET_ATTRS, isTouchDevice, useReveal, useUi } from './context'
-import { MAX_WORDS, type MnemonicScheme, expandPrefix, splitPhrase, suggestWords, usesBip39Wordlist } from '../lib/mnemonic'
+import { MAX_WORDS, type MnemonicScheme, expandPrefix, isBip39Word, parsePhrase, splitPhrase, suggestWords, usesBip39Wordlist } from '../lib/mnemonic'
 
 interface Props {
   words: string[]
@@ -12,14 +12,23 @@ interface Props {
 
 /** Numbered, individually masked word inputs. Pasting a whole phrase fills the grid. */
 export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
-  const { readOnly, copy } = useUi()
+  const { readOnly, copy, settings } = useUi()
   const [revealed, setRevealed] = useReveal(words)
   const [focused, setFocused] = useState<number | null>(null)
+  // With a mouse or keyboard, the word being typed shows while you type it.
+  // Focus alone (tabbing past the grid) never reveals a word.
+  const [typing, setTyping] = useState<number | null>(null)
+  const [notice, setNotice] = useState('')
   const refs = useRef<(HTMLInputElement | null)[]>([])
   const wordlist = usesBip39Wordlist(scheme)
-  // With a mouse, the focused word shows while you type it. On touch screens
-  // it stays masked unless you reveal all words.
-  const revealFocused = !isTouchDevice()
+  const revealTyped = !isTouchDevice()
+
+  // Mask the typed word again after the auto-hide delay without input.
+  useEffect(() => {
+    if (typing === null || !settings.autoHideSeconds) return
+    const timer = setTimeout(() => setTyping(null), settings.autoHideSeconds * 1000)
+    return () => clearTimeout(timer)
+  }, [typing, words, settings.autoHideSeconds])
 
   const setWord = (index: number, value: string) => {
     const next = [...words]
@@ -37,15 +46,38 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
   }
 
   const onPaste = (index: number, event: ClipboardEvent) => {
-    const pasted = splitPhrase(event.clipboardData?.getData('text') ?? '')
-    if (pasted.length < 2) return
+    const parsed = parsePhrase(event.clipboardData?.getData('text') ?? '')
+    if (parsed.words.length < 2) return
     event.preventDefault()
-    fill(index, pasted)
+    // Numbered words go to their own positions ("13. word" into word 13).
+    const start = parsed.firstNumber !== undefined && parsed.firstNumber - 1 < MAX_WORDS ? parsed.firstNumber - 1 : index
+    fill(start, parsed.words)
+    setNotice(parsed.reordered ? 'Placed the pasted words by their numbers. Check the order.' : '')
   }
 
-  const onInput = (index: number, raw: string) => {
+  const onInput = (index: number, event: InputEvent) => {
+    const input = event.currentTarget as HTMLInputElement
+    const raw = input.value
+    // Input methods (Japanese, Chinese, Korean, dictation) are still
+    // composing: keep the text as typed and act when composition ends.
+    if (event.isComposing) {
+      setWord(index, raw)
+      return
+    }
+    commit(index, input)
+  }
+
+  const commit = (index: number, input: HTMLInputElement) => {
+    const raw = input.value
     if (!/\s/.test(raw)) {
-      setWord(index, raw.toLowerCase())
+      const lower = raw.toLowerCase()
+      if (lower !== raw) {
+        // Lowercase in place so the caret stays where it was.
+        const [start, end] = [input.selectionStart, input.selectionEnd]
+        input.value = lower
+        if (start !== null && end !== null) input.setSelectionRange(start, end)
+      }
+      setWord(index, lower)
       return
     }
     // Android keyboards do not report the space key, so handle it here:
@@ -60,27 +92,45 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
   }
 
   const onKeyDown = (index: number, event: KeyboardEvent) => {
+    // Keys an input method is using (keyCode 229) are not ours.
+    if (event.isComposing || event.keyCode === 229) return
     if (event.key === ' ' || event.key === 'Enter') {
       event.preventDefault()
       refs.current[index + 1]?.focus()
     } else if (event.key === 'Backspace' && !words[index] && index > 0) {
       event.preventDefault()
       refs.current[index - 1]?.focus()
+    } else if (revealTyped && (event.key.length === 1 || event.key === 'Backspace') && !event.ctrlKey && !event.metaKey) {
+      setTyping(index)
     }
   }
 
-  const onBlur = (index: number) => {
+  const onBlur = () => {
     setFocused(null)
-    const word = words[index]
-    if (wordlist && word) {
-      const expanded = expandPrefix(word)
-      if (expanded !== word) setWord(index, expanded)
-    }
+    setTyping(null)
+  }
+
+  const applyWord = (index: number, word: string) => {
+    setWord(index, word)
+    refs.current[index]?.focus()
+  }
+
+  // Abbreviations are only expanded on request: words from other wordlists
+  // can look like English prefixes.
+  const expansions = wordlist
+    ? unknownWords.map((i) => [i, expandPrefix(words[i] ?? '')] as const).filter(([i, w]) => w !== words[i] && isBip39Word(w))
+    : []
+  const canExpand = expansions.length > 0 && expansions.length === unknownWords.length
+  const expandAll = () => {
+    const next = [...words]
+    for (const [i, w] of expansions) next[i] = w
+    onChange(next)
   }
 
   const filled = words.filter(Boolean)
+  const shown = (i: number) => revealed || (revealTyped && typing === i)
   const focusedUnknown = focused !== null && unknownWords.includes(focused) && words[focused]
-  const hints = focusedUnknown && (revealed || revealFocused) ? suggestWords(words[focused!]) : []
+  const hints = focusedUnknown && shown(focused!) ? suggestWords(words[focused!]) : []
 
   return (
     <div class="word-grid-wrap">
@@ -105,7 +155,7 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
       </div>
       <ol class="word-grid" aria-label="Seed words">
         {words.map((word, i) => {
-          const visible = revealed || (revealFocused && focused === i)
+          const visible = shown(i)
           const unknown = unknownWords.includes(i) && focused !== i
           return (
             <li key={i} class={`word ${unknown ? 'word-invalid' : ''}`}>
@@ -124,11 +174,12 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
                 list={wordlist && visible ? 'bip39-words' : undefined}
                 enterkeyhint={i === words.length - 1 ? 'done' : 'next'}
                 readOnly={readOnly}
-                onInput={(e) => onInput(i, e.currentTarget.value)}
+                onInput={(e) => onInput(i, e as unknown as InputEvent)}
                 onPaste={(e) => onPaste(i, e)}
                 onKeyDown={(e) => onKeyDown(i, e)}
                 onFocus={() => setFocused(i)}
-                onBlur={() => onBlur(i)}
+                onBlur={onBlur}
+                {...{ oncompositionend: (e: CompositionEvent) => commit(i, e.currentTarget as HTMLInputElement) }}
                 {...SECRET_ATTRS}
               />
             </li>
@@ -137,7 +188,32 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
       </ol>
       {hints.length > 0 && (
         <p class="hint" role="status">
-          Not in the wordlist. Did you mean: {hints.join(', ')}?
+          Not in the wordlist. Did you mean:{' '}
+          {hints.map((h) => (
+            <button
+              type="button"
+              key={h}
+              class="link-button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => applyWord(focused!, h)}
+            >
+              {h}
+            </button>
+          ))}
+          ?
+        </p>
+      )}
+      {canExpand && !readOnly && (
+        <p class="hint">
+          <button type="button" class="button small" onClick={expandAll}>
+            Expand abbreviated words
+          </button>{' '}
+          <span class="muted small">Only for English BIP39 phrases.</span>
+        </p>
+      )}
+      {notice && (
+        <p class="hint" role="status">
+          {notice}
         </p>
       )}
     </div>
