@@ -113,9 +113,13 @@ const openSsh = (keyType: string, cipher: string) =>
       sshString(new Uint8Array(0)),
       new Uint8Array([0, 0, 0, 1]),
       sshString(concat(sshString(text(keyType)), sshString(randomBytes(32)))),
-      sshString(randomBytes(64)),
+      // The private section starts with the same 32-bit "checkint" twice.
+      sshString(concat(new Uint8Array([1, 2, 3, 4, 1, 2, 3, 4]), randomBytes(56))),
     ),
   )
+
+/** A DER SEQUENCE of the given length, so PEM completeness checks pass. */
+const der = (length: number) => concat(new Uint8Array([0x30, 0x81, length]), randomBytes(length))
 
 // Independent CRC-24 (RFC 4880 sample code) for building armored test blocks.
 const crc24 = (data: Uint8Array) => {
@@ -165,13 +169,16 @@ describe('other key formats', () => {
   })
 
   it('recognizes PEM, PuTTY and JSON key files', async () => {
-    expect(await label(pem('PRIVATE KEY', randomBytes(48)))).toBe('PEM private key (PKCS#8)')
+    expect(await label(pem('PRIVATE KEY', der(200)))).toBe('PEM private key (PKCS#8)')
     expect(await result(pem('RSA PRIVATE KEY', randomBytes(64), 'Proc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00\n\n'))).toMatchObject({
       label: 'PEM RSA private key (PKCS#1)',
       detail: 'Protected by a passphrase.',
     })
     expect((await result(pem('CERTIFICATE', randomBytes(64))))?.level).toBe('warn')
     expect(await label('PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\nComment: x')).toBe('PuTTY private key (Ed25519)')
+    const putty = 'PuTTY-User-Key-File-3: ssh-ed25519\nEncryption: none\nPrivate-Lines: 2\nAAAA\nBBBB\nPrivate-MAC: 0a1b'
+    expect(await label(putty)).toBe('PuTTY private key (Ed25519)')
+    expect(await label(putty.replace('\nBBBB', ''))).toBe('PuTTY private key, but it is incomplete')
     expect(await label(JSON.stringify({ kty: 'OKP', crv: 'Ed25519', x: 'a', d: 'b' }))).toBe('JSON Web Key (OKP, private)')
     expect((await result(JSON.stringify({ kty: 'EC', x: 'a', y: 'b' })))?.level).toBe('warn')
     expect(await label(JSON.stringify({ type: 'service_account', private_key: 'x' }))).toBe('Google Cloud service account key')
@@ -228,7 +235,10 @@ describe('typo detection beyond Bitcoin', () => {
 })
 
 const CERT = '-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUQ\n-----END CERTIFICATE-----'
-const EC_KEY = '-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIIrYSSNQFaA2Hwf1duRSxKtLYX5CB04fSeQ6tF1aY/PuoAoGCCqGSM49\n-----END EC PRIVATE KEY-----'
+// A throwaway P-256 key generated for this test.
+const EC_KEY =
+  '-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIETWMaIxF4n5xkChf1exPX6m6KhdzCVg6TUqzBa0WS+HoAoGCCqGSM49\n' +
+  'AwEHoUQDQgAEFTbpD+HUUPCkoApRRFUbngMhXLTR7lDhMIa2ovrv80lDrRWqR85N\nBJij1BjzD3kK9tjR5LfIlvFLBBcqbSlrog==\n-----END EC PRIVATE KEY-----'
 
 describe('multi-block and other formats', () => {
   it('finds the private key in a certificate + key bundle and after EC parameters', async () => {
@@ -261,6 +271,43 @@ describe('findPrivateMaterial', () => {
     expect(await findPrivateMaterial('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBeNull()
     expect(await findPrivateMaterial('3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d')).toBeNull()
     expect(await findPrivateMaterial('73c5da0a')).toBeNull()
+  })
+})
+
+describe('structural checks and more formats', () => {
+  it('catches a missing line in a PEM private key', async () => {
+    const lines = EC_KEY.split('\n')
+    const damaged = [...lines.slice(0, 2), ...lines.slice(3)].join('\n')
+    expect((await detectKeyFormat(damaged))?.label).toBe('Private key block is damaged or incomplete')
+  })
+
+  it('recognizes AWS credentials files, EIP-2335 keystores, age-keygen files and more extended keys', async () => {
+    const aws = '[default]\naws_access_key_id = AKIAIOSFODNN7EXAMPLE\naws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+    expect((await detectKeyFormat(aws))?.label).toBe('AWS credentials file')
+    const v4 = JSON.stringify({ crypto: { kdf: {}, cipher: {} }, version: 4, pubkey: 'a1b2', path: 'm/12381/3600/0/0/0' })
+    expect((await detectKeyFormat(v4))?.label).toMatch(/EIP-2335/)
+    const age = bech32.encode('age-secret-key-', bech32.toWords(randomBytes(32)), false).toUpperCase()
+    const file = `# created: 2026-01-01T00:00:00Z\n# public key: age1example\n${age}`
+    expect((await detectKeyFormat(file))?.label).toBe('age secret key')
+    const ltpv = b58c.encode(new Uint8Array([0x01, 0x9d, 0x9c, 0xfe, ...randomBytes(74)]))
+    expect((await detectKeyFormat(ltpv))?.label).toBe('Extended private key (Ltpv)')
+    expect((await detectKeyFormat('[]'))?.label).toBe('Empty list')
+    expect((await detectKeyFormat('0XABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789'))?.label).toMatch(/Hex, 32 bytes/)
+  })
+
+  it('warns about seed phrases in any list style, but not ordinary sentences', async () => {
+    const phrase = 'legal winner thank year wave sausage worth useful legal winner thank yellow'
+    const numbered = phrase.split(' ').map((w, i) => `${i + 1}. ${w}`).join('\n')
+    expect((await detectKeyFormat(numbered))?.label).toBe('Looks like a 12-word seed phrase')
+    expect((await detectKeyFormat(phrase.replace(/ /g, ', ')))?.label).toBe('Looks like a 12-word seed phrase')
+    const sentence = 'this is a perfectly ordinary sentence that happens to have more than twelve words in it'
+    expect((await detectKeyFormat(sentence))?.label).not.toMatch(/seed phrase/)
+  })
+
+  it('stays fast on very long input', async () => {
+    const start = Date.now()
+    await detectKeyFormat('1'.repeat(200_000))
+    expect(Date.now() - start).toBeLessThan(1000)
   })
 })
 

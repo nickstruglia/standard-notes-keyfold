@@ -65,7 +65,7 @@ describe('checkMnemonic (bip39)', () => {
   })
 
   it('does not apply BIP39 rules to other schemes', async () => {
-    const result = await checkMnemonic('monero', new Array(25).fill('whatever'))
+    const result = await checkMnemonic('slip39', new Array(20).fill('whatever'))
     expect(result.status).toBe('unchecked')
     expect(result.unknownWords).toEqual([])
   })
@@ -135,3 +135,22 @@ describe('word helpers', () => {
     expect(suggestWords('abandn')).toContain('abandon')
   })
 })
+
+describe('more checksums', () => {
+  it('checks the Monero checksum word', async () => {
+    const seed = 'sequence atlas unveil summon pebbles tuesday beer rudely snake rockets different fuselage woven tagged bested dented vegan hover rapid fawns obvious muppet randomly seasons randomly'.split(' ')
+    expect((await checkMnemonic('monero', seed)).status).toBe('valid')
+    const wrong = [...seed.slice(0, 24), 'sequence']
+    expect((await checkMnemonic('monero', wrong)).status).toBe('invalid')
+  })
+
+  it('points out an Electrum seed entered as BIP39', async () => {
+    // A valid Electrum 2.0 standard seed (from Electrum's test vectors) is not valid BIP39.
+    const words = 'wild father tree among universe such mobile favorite target dynamic credit identify'.split(' ')
+    const electrum = await electrumSeedType(words)
+    const result = await checkMnemonic('bip39', words)
+    if (electrum) expect(result.message).toMatch(/valid Electrum seed/)
+    else expect(result.status).toBe('invalid')
+  })
+})
+

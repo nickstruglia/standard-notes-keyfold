@@ -1,4 +1,5 @@
 import { bytesEqual, fromBase64, fromHex, fromUtf8, hasSubtleCrypto, sha256 } from './encoding'
+import { isBip39Word, splitPhrase } from './mnemonic'
 
 // Recognizes common private key encodings so typos and mix-ups
 // (pasting an address or xpub instead of a key) are caught early.
@@ -115,6 +116,16 @@ const EXTENDED_KEY_VERSIONS: Record<string, { name: string; private: boolean; no
   '044a5262': { name: 'upub', private: false, note: 'testnet BIP49' },
   '045f18bc': { name: 'vprv', private: true, note: 'testnet BIP84' },
   '045f1cf6': { name: 'vpub', private: false, note: 'testnet BIP84' },
+  '024285b5': { name: 'Uprv', private: true, note: 'testnet multisig nested SegWit' },
+  '024289ef': { name: 'Upub', private: false, note: 'testnet multisig nested SegWit' },
+  '02575048': { name: 'Vprv', private: true, note: 'testnet multisig native SegWit' },
+  '02575483': { name: 'Vpub', private: false, note: 'testnet multisig native SegWit' },
+  '019d9cfe': { name: 'Ltpv', private: true, note: 'Litecoin' },
+  '019da462': { name: 'Ltub', private: false, note: 'Litecoin' },
+  '01b26792': { name: 'Mtpv', private: true, note: 'Litecoin SegWit' },
+  '01b26ef6': { name: 'Mtub', private: false, note: 'Litecoin SegWit' },
+  '02fac398': { name: 'dgpv', private: true, note: 'Dogecoin' },
+  '02facafd': { name: 'dgub', private: false, note: 'Dogecoin' },
 }
 
 const WIF_VERSIONS: Record<number, string> = {
@@ -144,6 +155,7 @@ const detectJson = (text: string): KeyFormat | null => {
   } catch {
     return null
   }
+  if (Array.isArray(parsed) && parsed.length === 0) return { level: 'info', label: 'Empty list' }
   if (Array.isArray(parsed) && parsed.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
     return parsed.length === 64
       ? { level: 'ok', label: 'Byte array, 64 bytes', detail: 'Solana CLI keypair file format.' }
@@ -151,6 +163,13 @@ const detectJson = (text: string): KeyFormat | null => {
   }
   if (parsed && typeof parsed === 'object') {
     const obj = parsed as Record<string, unknown>
+    if (obj.crypto && Number(obj.version) === 4 && typeof obj.pubkey === 'string') {
+      return {
+        level: 'ok',
+        label: 'Encrypted keystore (EIP-2335, Ethereum validator)',
+        detail: 'Store its password in the keystore password field.',
+      }
+    }
     if ((obj.crypto || obj.Crypto) && Number(obj.version) === 3) {
       return {
         level: 'ok',
@@ -213,10 +232,16 @@ export const readOpenSshKey = (base64Body: string): { keyType: string; encrypted
     offset += 4 // number of keys
     const publicKey = readBytes()
     // The private section must be complete; a short read means part of the key was not copied.
-    readBytes()
+    const privateSection = readBytes()
     const typeLength = new DataView(publicKey.buffer, publicKey.byteOffset).getUint32(0)
     const keyType = fromUtf8(publicKey.slice(4, 4 + typeLength))
-    return { keyType, encrypted: cipher !== 'none' }
+    const encrypted = cipher !== 'none'
+    // Unencrypted keys start with the same random 32-bit number twice ("checkint").
+    if (!encrypted) {
+      const check = new DataView(privateSection.buffer, privateSection.byteOffset, privateSection.byteLength)
+      if (privateSection.length < 8 || check.getUint32(0) !== check.getUint32(4)) return null
+    }
+    return { keyType, encrypted }
   } catch {
     return null
   }
@@ -264,11 +289,40 @@ const NOT_KEYS: Record<string, string> = {
   'PGP SIGNED MESSAGE': 'PGP signed message',
 }
 
+/**
+ * Whether a DER structure (the base64 inside most PEM blocks) is complete:
+ * its outer length must match the data. Catches a dropped or extra line.
+ * null when the block has headers (legacy encrypted PEM), which is not plain DER.
+ */
+const derComplete = (body: string): boolean | null => {
+  if (body.includes(':')) return null
+  let bytes: Uint8Array
+  try {
+    bytes = fromBase64(body.replace(/\s+/g, ''))
+  } catch {
+    return false
+  }
+  if (bytes.length < 2 || bytes[0] !== 0x30) return false
+  let length = bytes[1]
+  let header = 2
+  if (length & 0x80) {
+    const n = length & 0x7f
+    if (n < 1 || n > 4 || bytes.length < 2 + n) return false
+    length = 0
+    for (let i = 0; i < n; i++) length = length * 256 + bytes[2 + i]
+    header = 2 + n
+  }
+  return header + length === bytes.length
+}
+
 /** One PEM block on its own. */
 const classifyPemBlock = (type: string, body: string, block: string): KeyFormat => {
   const encrypted = /Proc-Type:\s*4,ENCRYPTED/i.test(body)
   if (NOT_KEYS[type]) return { level: 'warn', label: NOT_KEYS[type], detail: 'This is not a key.' }
   if (PUBLIC_PEM[type]) return { level: 'warn', label: PUBLIC_PEM[type], detail: PUBLIC_WARNING }
+  if (/PRIVATE KEY$/.test(type) && type !== 'OPENSSH PRIVATE KEY' && derComplete(body) === false) {
+    return { level: 'error', label: 'Private key block is damaged or incomplete', detail: 'A line may be missing or changed.' }
+  }
   switch (type) {
     case 'OPENSSH PRIVATE KEY': {
       const key = readOpenSshKey(body)
@@ -347,9 +401,20 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
   const text = input.trim()
   if (!text) return null
 
+  // An AWS credentials or config file ([default] then key = value lines) is INI, not JSON.
+  if (/^\[[\w .-]+\]\s*$/m.test(text.split('\n')[0]) && /^\s*[\w.-]+\s*=/m.test(text)) {
+    return /aws_secret_access_key\s*=/i.test(text)
+      ? { level: 'ok', label: 'AWS credentials file', detail: 'Contains a secret access key.' }
+      : { level: 'info', label: 'Settings file (INI)' }
+  }
+
   if (text.startsWith('{') || text.startsWith('[')) {
     return detectJson(text) ?? { level: 'warn', label: 'Looks like JSON, but it does not parse.' }
   }
+
+  // A whole age-keygen file: comments, then the secret key line.
+  const ageLine = /^AGE-SECRET-KEY-1[0-9A-Z]+$/m.exec(text)
+  if (ageLine && text.includes('\n')) return detectKeyFormat(ageLine[0])
 
   if (/^---- BEGIN SSH2 PUBLIC KEY ----/m.test(text)) {
     return { level: 'warn', label: 'SSH public key (SSH2 format)', detail: PUBLIC_WARNING }
@@ -360,6 +425,15 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
 
   const putty = /^PuTTY-User-Key-File-\d+:\s*(\S+)/.exec(text)
   if (putty) {
+    // Private-Lines says how many base64 lines follow; fewer means part of the key is missing.
+    const declared = /^Private-Lines:\s*(\d+)\s*$/m.exec(text)
+    if (declared) {
+      const after = text.slice(declared.index + declared[0].length).split('\n').map((l) => l.trim())
+      const lines = after.filter((l) => l && !/^Private-MAC:/.test(l)).filter((l) => /^[A-Za-z0-9+/=]+$/.test(l))
+      if (lines.length < Number(declared[1]) || !/^Private-MAC:\s*[0-9a-f]+/m.test(text)) {
+        return { level: 'error', label: 'PuTTY private key, but it is incomplete', detail: 'Private lines or the MAC line are missing.' }
+      }
+    }
     const encrypted = !/^Encryption:\s*none/m.test(text)
     return {
       level: 'ok',
@@ -376,8 +450,9 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
   const token = TOKENS.find((t) => t.pattern.test(text))
   if (token) return { level: token.level ?? 'ok', label: token.label, detail: token.detail }
 
-  const words = text.split(/\s+/)
-  if (words.length >= 12 && words.every((w) => /^[a-z]+$/i.test(w))) {
+  // Numbered or comma-separated lists count, ordinary sentences do not: every word must be a BIP39 word.
+  const words = splitPhrase(text)
+  if (words.length >= 12 && words.length <= 48 && words.every(isBip39Word)) {
     return {
       level: 'warn',
       label: `Looks like a ${words.length}-word seed phrase`,
@@ -385,9 +460,9 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
     }
   }
 
-  if (/^(0x)?[0-9a-fA-F]+$/.test(text) && text.replace(/^0x/, '').length % 2 === 0) {
-    const bytes = fromHex(text)
-    const evm = text.startsWith('0x')
+  if (/^(0x)?[0-9a-fA-F]+$/i.test(text) && text.replace(/^0x/i, '').length % 2 === 0) {
+    const bytes = fromHex(text.replace(/^0X/, '0x'))
+    const evm = /^0x/i.test(text)
     if (bytes.length === 32) {
       return {
         level: 'ok',
@@ -453,7 +528,8 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
     }
   }
 
-  if (/^[1-9A-HJ-NP-Za-km-z]+$/.test(text)) {
+  // Nothing in base58 Keyfold knows is longer than 200 characters; decoding huge input is slow.
+  if (text.length <= 200 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(text)) {
     if (hasSubtleCrypto()) {
       const payload = await base58CheckDecode(text)
       if (payload) {

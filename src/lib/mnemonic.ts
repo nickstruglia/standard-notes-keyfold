@@ -46,7 +46,8 @@ export const parsePhrase = (text: string): ParsedPhrase => {
   const tokens = text
     .replace(ZERO_WIDTH, ' ')
     // "1.abandon", "1-legal", "#1abandon": separate the marker from the word.
-    .replace(/(\d+)[.):\-]*(?=\p{L})/gu, '$1 ')
+    // (?<!\d) keeps this linear: without it, long runs of digits backtrack quadratically.
+    .replace(/(?<!\d)(\d+)[.):\-]*(?=\p{L})/gu, '$1 ')
     .split(/[\s,;|]+/)
   const numbered: { n: number; word: string }[] = []
   const words: string[] = []
@@ -114,7 +115,8 @@ const editDistance = (a: string, b: string): number => {
 /** Closest wordlist entries for a misspelled word. */
 export const suggestWords = (word: string, limit = 3): string[] => {
   const w = normalizeWord(word)
-  if (!w) return []
+  // BIP39 words have at most 8 letters; long input is not a typo of one (and is slow to compare).
+  if (!w || w.length > 10) return []
   const byPrefix = BIP39_ENGLISH.filter((c) => c.startsWith(w.slice(0, 4)))
   if (byPrefix.length > 0 && byPrefix.length <= limit) return byPrefix
   return BIP39_ENGLISH.map((c) => [c, editDistance(w, c)] as const)
@@ -204,13 +206,16 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
         }
       }
       const ok = await bip39Checksum(words.map((w) => WORD_INDEX.get(w)!))
-      return ok
-        ? { status: 'valid', message: `Valid BIP39 checksum (${words.length} words).`, unknownWords }
-        : {
-            status: 'invalid',
-            message: 'Checksum mismatch. Check the spelling and order of every word.',
-            unknownWords,
-          }
+      if (ok) return { status: 'valid', message: `Valid BIP39 checksum (${words.length} words).`, unknownWords }
+      // Electrum seeds use the same words but their own checksum.
+      const electrum = words.length === 12 ? await electrumSeedType(words) : null
+      return {
+        status: 'invalid',
+        message: electrum
+          ? `Not a BIP39 phrase, but these words are a valid Electrum seed (${electrum}). Choose the Electrum scheme.`
+          : 'Checksum mismatch. Check the spelling and order of every word.',
+        unknownWords,
+      }
     }
     case 'electrum': {
       const type = await electrumSeedType(words)
@@ -222,17 +227,52 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
             unknownWords,
           }
     }
+    case 'monero': {
+      if (words.length !== 25 && words.length !== 13) break
+      const ok = moneroChecksumOk(words)
+      return ok
+        ? { status: 'valid', message: `Monero checksum word OK (${words.length} words).`, unknownWords }
+        : {
+            status: 'invalid',
+            message: 'The last word does not match the Monero checksum. Check the spelling and order of every word.',
+            unknownWords,
+          }
+    }
     case 'aezeed':
       return {
         status: 'unchecked',
         message: 'All words are in the wordlist. The aezeed checksum is not checked here.',
         unknownWords,
       }
-    default:
-      return {
-        status: 'unchecked',
-        message: `${words.length} words. Checksums for this scheme are not checked here.`,
-        unknownWords,
-      }
   }
+  return {
+    status: 'unchecked',
+    message: `${words.length} words. Checksums for this scheme are not checked here.`,
+    unknownWords,
+  }
+}
+
+/** CRC-32 (IEEE), as Monero uses for its checksum word. */
+const crc32 = (bytes: Uint8Array): number => {
+  let crc = 0xffffffff
+  for (const byte of bytes) {
+    let c = (crc ^ byte) & 0xff
+    for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1
+    crc = (crc >>> 8) ^ c
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+
+/**
+ * Monero (25 words, or 13 for MyMonero): the last word repeats one of the
+ * others, chosen by a CRC-32 of each word's first letters. English and most
+ * languages use 3-letter prefixes; some use 4, Chinese 1, so all are tried.
+ */
+export const moneroChecksumOk = (words: string[]): boolean => {
+  const body = words.slice(0, -1).map((w) => w.normalize('NFC'))
+  const last = words[words.length - 1].normalize('NFC')
+  return [3, 4, 1].some((length) => {
+    const prefixes = body.map((w) => [...w].slice(0, length).join('')).join('')
+    return body[crc32(utf8(prefixes)) % body.length] === last
+  })
 }

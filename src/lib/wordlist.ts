@@ -1,7 +1,7 @@
 // BIP39 English wordlist (2048 words), from
 // https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt
 // SHA-256 of the source file: 2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda
-// tests/bip39.test.ts re-checks this list against that hash.
+// tests/mnemonic.test.ts re-checks this list against that hash.
 const RAW = `
   abandon ability able about above absent absorb abstract
   absurd abuse access accident account accuse achieve acid

@@ -396,12 +396,15 @@ const KeySection = ({ entry, update }: SectionArgs) => {
           mono
         />
       </Field>
-      {format && (
-        <p class={`status status-${levelClass[format.level]}`} role="status">
-          <Icon name={format.level === 'ok' ? 'check' : format.level === 'info' ? 'shield' : 'alert'} /> {format.label}
-          {format.detail && <span class="muted"> · {format.detail}</span>}
-        </p>
-      )}
+      {/* Always mounted, so screen readers announce changes to its text. */}
+      <p class={`status ${format ? `status-${levelClass[format.level]}` : ''}`} role="status">
+        {format && (
+          <>
+            <Icon name={format.level === 'ok' ? 'check' : format.level === 'info' ? 'shield' : 'alert'} /> {format.label}
+            {format.detail && <span class="muted"> · {format.detail}</span>}
+          </>
+        )}
+      </p>
       <PassphraseFields entry={entry} update={update} />
     </Section>
   )
