@@ -13,7 +13,7 @@ export interface HostNote {
 }
 
 export interface Host {
-  mode: 'standardnotes' | 'demo'
+  mode: 'standardnotes' | 'demo' | 'viewer'
   subscribe(listener: (note: HostNote) => void): void
   save(text: string, preview: string): void
 }
@@ -71,6 +71,15 @@ export const createDemoHost = (initialText: string): Host => {
     },
   }
 }
+
+/** Opens a note's text read-only, outside Standard Notes (for recovery). Nothing is saved. */
+export const createViewerHost = (noteText: string): Host => ({
+  mode: 'viewer',
+  subscribe(listener) {
+    queueMicrotask(() => listener({ text: noteText, locked: true, metadataOnly: false }))
+  },
+  save() {},
+})
 
 export const isEmbedded = (): boolean => {
   try {

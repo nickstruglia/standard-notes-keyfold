@@ -842,7 +842,13 @@ export const App = ({ host }: { host: Host }) => {
         {host.mode === 'demo' && (
           <div class="banner banner-warn" role="note">
             <Icon name="alert" /> Demo mode: not connected to Standard Notes, nothing is saved. Do not type real secrets here.
-            To install, add <code>{new URL('ext.json', location.href).href}</code> in Standard Notes → Preferences → Plugins.
+            To install, add <code>{new URL('ext.json', location.href).href}</code> in Standard Notes → Preferences → Plugins.{' '}
+            Lost access to Keyfold? <a href="#open" onClick={() => setTimeout(() => location.reload())}>Open a note read-only</a>.
+          </div>
+        )}
+        {host.mode === 'viewer' && (
+          <div class="banner" role="note">
+            <Icon name="lock" /> Read-only viewer: nothing you open here is saved or sent anywhere. Close the tab when done.
           </div>
         )}
         {fromNewer && phase.name === 'ready' && (
@@ -851,7 +857,7 @@ export const App = ({ host }: { host: Host }) => {
             plugin in Standard Notes (Preferences → Plugins) to edit it.
           </div>
         )}
-        {noteLocked && phase.name === 'ready' && (
+        {noteLocked && host.mode !== 'viewer' && phase.name === 'ready' && (
           <div class="banner" role="note">
             <Icon name="lock" /> "Prevent editing" is on for this note. You can still reveal and copy secrets.
           </div>

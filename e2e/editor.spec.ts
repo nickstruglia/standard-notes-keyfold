@@ -465,6 +465,21 @@ test('archiving says where the entry went, and an all-archived list offers the f
   await expect(app.getByRole('button', { name: /Cold storage/ })).toBeVisible()
 })
 
+test('the recovery viewer opens an encrypted note read-only, also from the unzipped files', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'one engine check is enough')
+  for (const url of ['/#open', `file://${process.cwd()}/dist/index.html#open`]) {
+    await page.goto(url)
+    await page.getByLabel('Note text').fill(ENCRYPTED_NOTE)
+    await page.getByRole('button', { name: 'Open read-only' }).click()
+    await page.getByLabel('Vault password').fill(KAT_PASSWORD)
+    await page.getByRole('button', { name: 'Unlock' }).click()
+    await expect(page.getByText('Known answer')).toBeVisible()
+    await expect(page.getByText(/Read-only viewer/)).toBeVisible()
+    await page.getByRole('button', { name: /Known answer/ }).click()
+    await expect(page.getByLabel('Word 1', { exact: true })).toHaveAttribute('readonly', '')
+  }
+})
+
 test('demo mode when opened directly', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText(/Demo mode/)).toBeVisible()

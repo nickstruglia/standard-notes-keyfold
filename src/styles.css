@@ -888,6 +888,15 @@ select.input {
   width: 100%;
   justify-content: center;
 }
+/* Recovery viewer */
+.open-note {
+  max-width: 640px;
+  width: 100%;
+}
+.open-note textarea {
+  width: 100%;
+}
+
 .password-form {
   max-width: 460px;
 }

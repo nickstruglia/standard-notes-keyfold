@@ -28,7 +28,8 @@ const commit = (process.env.GITHUB_SHA || '').slice(0, 7)
 const LOCAL = 'http://localhost:* http://127.0.0.1:*'
 const CSP = [
   "default-src 'none'",
-  `script-src ${siteUrl} ${LOCAL}`,
+  // file: lets the unzipped offline copy run from disk (recovery viewer).
+  `script-src ${siteUrl} ${LOCAL} file:`,
   `style-src ${siteUrl} 'unsafe-inline' https: data: ${LOCAL}`,
   'img-src data:',
   'font-src data:',
