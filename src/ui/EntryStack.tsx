@@ -53,7 +53,13 @@ interface StackProps {
 export const EntryStack = ({ groups, expanded, collapsedGroups, reminderMonths, newId, onToggle, onToggleGroup, handlersFor }: StackProps) => (
   <div class="stack">
     {groups.map((group) => (
-      <Group key={group.key} group={group} collapsed={collapsedGroups.has(group.key)} onToggle={() => onToggleGroup(group.key)}>
+      <Group
+        key={group.key}
+        group={group}
+        bare={groups.length === 1}
+        collapsed={collapsedGroups.has(group.key) && groups.length > 1}
+        onToggle={() => onToggleGroup(group.key)}
+      >
         <ul class="cards" aria-label={group.label || 'Entries'}>
           {group.entries.map((entry) => (
             <EntryCard

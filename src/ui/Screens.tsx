@@ -56,7 +56,7 @@ export const ForeignScreen = ({ length, readOnly, onConvert }: { length: number;
       <Icon name="alert" size={32} />
       <h2>This note already has other content</h2>
       <p class="small">
-        It holds {length.toLocaleString()} characters that are not a Crypto Vault. Nothing has been changed.
+        It holds {length.toLocaleString()} characters that are not a Keyfold vault. Nothing has been changed.
       </p>
       <p class="small">
         To keep the note as it is, switch it back to another editor in Standard Notes. Or convert it: the existing text is
@@ -75,7 +75,7 @@ export const NewerScreen = ({ version }: { version: number }) => (
       <Icon name="alert" size={32} />
       <h2>Saved by a newer version</h2>
       <p class="small">
-        This vault uses format version {version}, which this copy of Crypto Vault does not understand yet. Nothing has been
+        This vault uses format version {version}, which this copy of Keyfold does not understand yet. Nothing has been
         changed. Update the plugin in Standard Notes (Preferences → Plugins) to open it.
       </p>
     </div>

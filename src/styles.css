@@ -14,6 +14,8 @@
   --danger: var(--sn-stylekit-danger-color, #cc1f36);
   --danger-fg: var(--sn-stylekit-danger-contrast-color, #ffffff);
   --placeholder: var(--sn-stylekit-input-placeholder-color, #9a9ea7);
+  /* Themes define no purple, so key types mix the theme's blue and red. */
+  --keys: color-mix(in srgb, var(--info) 60%, var(--danger));
   --font: var(--sn-stylekit-sans-serif-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
   --mono: var(--sn-stylekit-monospace-font, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   --radius: 6px;
@@ -314,9 +316,17 @@ select.input {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 12%, transparent);
 }
-.badge-other {
+.badge-other,
+.badge-recoveryCodes {
   color: var(--muted);
   background: var(--contrast);
+}
+.badge-sshKey,
+.badge-pgpKey,
+.badge-apiKey,
+.badge-genericKey {
+  color: var(--keys);
+  background: color-mix(in srgb, var(--keys) 12%, transparent);
 }
 
 .banner {
@@ -399,6 +409,19 @@ select.input {
 .popover-dialog {
   width: 270px;
   padding: 12px;
+}
+.menu-heading {
+  padding: 6px 10px 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.menu-group + .menu-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
 }
 .menu-item {
   display: flex;

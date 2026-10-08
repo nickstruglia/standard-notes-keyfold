@@ -1,17 +1,18 @@
 import type { MnemonicScheme } from './mnemonic'
 import { newId } from './encoding'
+import { type EntryKind, KINDS, KIND_INFO } from './kinds'
+
+export type { EntryKind } from './kinds'
 
 // The note text is a JSON document in one of two shapes:
 //   plain:     { app, version, vault: VaultData }
 //   encrypted: { app, version, encryption: EncryptedBlob }  (see vaultCrypto.ts)
 
-export const APP_ID = 'sn-crypto-vault'
+export const APP_ID = 'keyfold'
 export const FORMAT_VERSION = 1
 export const README_NOTE =
-  'Managed by the Crypto Vault editor for Standard Notes (https://github.com/nickstruglia/sn-crypto). ' +
+  'Managed by the Keyfold editor for Standard Notes (https://github.com/nickstruglia/sn-keyfold). ' +
   'Edit this note with that editor so the JSON stays valid.'
-
-export type EntryKind = 'mnemonic' | 'privateKey' | 'other'
 
 export interface CustomField {
   id: string
@@ -32,10 +33,16 @@ export interface Entry {
   kind: EntryKind
   label: string
   description: string
+  /** Crypto entries: chain or coin, and wallet or device. */
   chain: string
   wallet: string
+  /** Other entries: where the key is used, and the account it belongs to. */
+  service: string
+  account: string
   /** YYYY-MM-DD the wallet or key was created. */
   createdOn: string
+  /** YYYY-MM-DD the key expires (SSH, PGP, API and other keys). */
+  expiresOn: string
   tags: string[]
   favorite: boolean
   archived: boolean
@@ -45,7 +52,8 @@ export interface Entry {
   passphrase: string
   passphraseHint: string
 
-  privateKey: string
+  /** The key, token or recovery codes, depending on the kind. */
+  secret: string
 
   derivationPath: string
   fingerprint: string
@@ -102,7 +110,8 @@ export const DEFAULT_SETTINGS: VaultSettings = {
   layout: 'stacked',
   density: 'comfortable',
   singleExpand: false,
-  groupBy: 'none',
+  // Grouping by type keeps seed phrases and wallet keys at the top.
+  groupBy: 'kind',
   sort: 'updated',
 }
 
@@ -123,7 +132,10 @@ export const createEntry = (kind: EntryKind, overrides: Partial<Entry> = {}): En
     description: '',
     chain: '',
     wallet: '',
+    service: '',
+    account: '',
     createdOn: today(),
+    expiresOn: '',
     tags: [],
     favorite: false,
     archived: false,
@@ -131,7 +143,7 @@ export const createEntry = (kind: EntryKind, overrides: Partial<Entry> = {}): En
     words: kind === 'mnemonic' ? new Array(12).fill('') : [],
     passphrase: '',
     passphraseHint: '',
-    privateKey: '',
+    secret: '',
     derivationPath: '',
     fingerprint: '',
     publicInfo: '',
@@ -154,7 +166,6 @@ const oneOf = <T extends string>(v: unknown, options: readonly T[], fallback: T)
 const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 
-const KINDS: EntryKind[] = ['mnemonic', 'privateKey', 'other']
 const SCHEME_IDS: MnemonicScheme[] = ['bip39', 'electrum', 'aezeed', 'slip39', 'monero', 'other']
 
 /** Fills defaults and drops wrong types, keeping unknown keys for forward compatibility. */
@@ -169,7 +180,10 @@ export const normalizeEntry = (raw: unknown): Entry => {
     description: str(o.description),
     chain: str(o.chain),
     wallet: str(o.wallet),
+    service: str(o.service),
+    account: str(o.account),
     createdOn: str(o.createdOn),
+    expiresOn: str(o.expiresOn),
     tags: arr(o.tags).filter((t): t is string => typeof t === 'string'),
     favorite: bool(o.favorite),
     archived: bool(o.archived),
@@ -177,7 +191,7 @@ export const normalizeEntry = (raw: unknown): Entry => {
     words: arr(o.words).map((w) => str(w)),
     passphrase: str(o.passphrase),
     passphraseHint: str(o.passphraseHint),
-    privateKey: str(o.privateKey),
+    secret: str(o.secret),
     derivationPath: str(o.derivationPath),
     fingerprint: str(o.fingerprint),
     publicInfo: str(o.publicInfo),
@@ -284,21 +298,16 @@ export const serializePlain = (vault: VaultData): string =>
 export const serializeEncrypted = (blob: EncryptedBlob): string =>
   JSON.stringify({ app: APP_ID, version: FORMAT_VERSION, readme: README_NOTE, encryption: blob }, null, 1)
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
-
 /** Note-list preview. Never includes labels or secret material. */
 export const previewText = (vault: VaultData | null): string => {
-  if (!vault) return 'Crypto Vault (password protected)'
+  if (!vault) return 'Keyfold (password protected)'
   const active = vault.entries.filter((e) => !e.archived)
-  const seeds = active.filter((e) => e.kind === 'mnemonic').length
-  const keys = active.filter((e) => e.kind === 'privateKey').length
-  const other = active.length - seeds - keys
-  const parts = [
-    seeds && plural(seeds, 'seed phrase', 'seed phrases'),
-    keys && plural(keys, 'private key', 'private keys'),
-    other && plural(other, 'other secret', 'other secrets'),
-  ].filter(Boolean)
-  return `Crypto Vault: ${parts.length ? parts.join(', ') : 'empty'}`
+  const parts = KINDS.flatMap((kind) => {
+    const n = active.filter((e) => e.kind === kind).length
+    if (!n) return []
+    return [`${n} ${n === 1 ? KIND_INFO[kind].one : KIND_INFO[kind].plural}`]
+  })
+  return `Keyfold: ${parts.length ? parts.join(', ') : 'empty'}`
 }
 
 /** Most recent backup check for an entry, or '' when none was recorded. */
@@ -306,10 +315,26 @@ export const lastVerified = (entry: Entry): string =>
   entry.backups.map((b) => b.verifiedOn).filter(Boolean).sort().at(-1) ?? ''
 
 export const isBackupDue = (entry: Entry, months: number, now = new Date()): boolean => {
-  if (months <= 0 || entry.archived) return false
+  if (months <= 0 || entry.archived || !KIND_INFO[entry.kind].backupReminders) return false
   const last = lastVerified(entry)
   if (!last) return true
   const due = new Date(`${last}T00:00:00`)
   due.setMonth(due.getMonth() + months)
   return due.getTime() <= now.getTime()
+}
+
+export const EXPIRY_WARNING_DAYS = 30
+
+/** Days until the entry's key expires (negative once expired), or null when no date is set. */
+export const daysUntilExpiry = (entry: Entry, now = new Date()): number | null => {
+  if (!entry.expiresOn || !KIND_INFO[entry.kind].expires) return null
+  const expires = new Date(`${entry.expiresOn}T00:00:00`)
+  if (Number.isNaN(expires.getTime())) return null
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return Math.round((expires.getTime() - start.getTime()) / 86_400_000)
+}
+
+export const isExpiringSoon = (entry: Entry, now = new Date()): boolean => {
+  const days = daysUntilExpiry(entry, now)
+  return days !== null && days <= EXPIRY_WARNING_DAYS && !entry.archived
 }

@@ -7,7 +7,8 @@ import { KIND_LABELS } from './labels'
 import { SECRET_ATTRS, useAsync, useSection, useUi } from './context'
 import { COMMON_WORD_COUNTS, MAX_WORDS, SCHEMES, type MnemonicScheme, checkMnemonic } from '../lib/mnemonic'
 import { detectKeyFormat } from '../lib/keyformat'
-import { type Entry, isBackupDue, lastVerified, today } from '../lib/vault'
+import { type Entry, daysUntilExpiry, isBackupDue, lastVerified, today } from '../lib/vault'
+import { KIND_INFO, isCrypto } from '../lib/kinds'
 import { newId } from '../lib/encoding'
 
 const CHAINS = [
@@ -19,6 +20,11 @@ const WALLETS = [
   'Ledger', 'Trezor', 'Coldcard', 'BitBox02', 'Keystone', 'Blockstream Jade', 'Foundation Passport',
   'Sparrow', 'Electrum', 'Nunchuk', 'BlueWallet', 'Phoenix', 'MetaMask', 'Rabby', 'Rainbow', 'Phantom',
   'Solflare', 'Exodus', 'Trust Wallet', 'Coinbase Wallet', 'Cake Wallet', 'Feather', 'Monero GUI',
+]
+const SERVICES = [
+  'GitHub', 'GitLab', 'Bitbucket', 'AWS', 'Google Cloud', 'Azure', 'Cloudflare', 'DigitalOcean', 'Vercel',
+  'Stripe', 'Slack', 'npm', 'Docker Hub', 'Apple ID', 'Google account', 'Microsoft account', 'Proton',
+  'Standard Notes', 'Coinbase', 'Kraken', 'Binance', 'Gemini', 'Bitstamp',
 ]
 const PATHS = [
   ["m/44'/0'/0'", 'BTC legacy (BIP44)'],
@@ -43,6 +49,11 @@ export const EditorDatalists = () => (
     <datalist id="wallets">
       {WALLETS.map((w) => (
         <option value={w} />
+      ))}
+    </datalist>
+    <datalist id="services">
+      {SERVICES.map((s) => (
+        <option value={s} />
       ))}
     </datalist>
     <datalist id="paths">
@@ -123,7 +134,16 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
   useEffect(() => {
     if (focusLabel) labelRef.current?.focus()
   }, [])
-  const summary = [entry.description && 'description', entry.createdOn && `created ${entry.createdOn}`].filter(Boolean).join(' · ')
+  const info = KIND_INFO[entry.kind]
+  const crypto = isCrypto(entry.kind)
+  const days = daysUntilExpiry(entry)
+  const summary = [
+    entry.description && 'description',
+    entry.createdOn && `created ${entry.createdOn}`,
+    entry.expiresOn && info.expires && `expires ${entry.expiresOn}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   return (
     <Section id={`${entry.id}:details`} title="Details" summary={summary || 'empty'} defaultOpen={!entry.label}>
       {showLabel && (
@@ -150,16 +170,39 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
         />
       </Field>
       <div class="row">
-        <Field label="Chain / coin">
-          <input class="input" list="chains" value={entry.chain} readOnly={readOnly} onInput={(e) => update({ chain: e.currentTarget.value })} />
-        </Field>
-        <Field label="Wallet / device">
-          <input class="input" list="wallets" value={entry.wallet} readOnly={readOnly} onInput={(e) => update({ wallet: e.currentTarget.value })} />
-        </Field>
+        {crypto ? (
+          <>
+            <Field label={info.serviceLabel}>
+              <input class="input" list="chains" value={entry.chain} readOnly={readOnly} onInput={(e) => update({ chain: e.currentTarget.value })} />
+            </Field>
+            <Field label={info.accountLabel}>
+              <input class="input" list="wallets" value={entry.wallet} readOnly={readOnly} onInput={(e) => update({ wallet: e.currentTarget.value })} />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label={info.serviceLabel}>
+              <input class="input" list="services" value={entry.service} readOnly={readOnly} onInput={(e) => update({ service: e.currentTarget.value })} />
+            </Field>
+            <Field label={info.accountLabel}>
+              <input class="input" value={entry.account} readOnly={readOnly} onInput={(e) => update({ account: e.currentTarget.value })} spellcheck={false} />
+            </Field>
+          </>
+        )}
         <Field label="Date created">
           <input class="input" type="date" value={entry.createdOn} readOnly={readOnly} onInput={(e) => update({ createdOn: e.currentTarget.value })} />
         </Field>
+        {info.expires && (
+          <Field label="Expires on" hint={days === null ? 'Optional. You are warned 30 days ahead.' : undefined}>
+            <input class="input" type="date" value={entry.expiresOn} readOnly={readOnly} onInput={(e) => update({ expiresOn: e.currentTarget.value })} />
+          </Field>
+        )}
       </div>
+      {days !== null && days <= 30 && (
+        <p class={`status ${days < 0 ? 'status-error' : 'status-warn'}`}>
+          <Icon name="clock" /> {days < 0 ? `Expired on ${entry.expiresOn}.` : days === 0 ? 'Expires today.' : `Expires in ${days} day${days === 1 ? '' : 's'}.`}
+        </p>
+      )}
       <Field label="Tags" hint="Comma separated." wide>
         <TagsInput tags={entry.tags} onChange={(tags) => update({ tags })} />
       </Field>
@@ -254,31 +297,43 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
           <Icon name={check.status === 'valid' ? 'check' : check.status === 'invalid' ? 'alert' : 'shield'} /> {check.message}
         </p>
       )}
-      <div class="row">
-        <Field label="Passphrase (25th word)" hint="Optional BIP39 passphrase. A different passphrase opens a different wallet.">
-          <SecretField label="Passphrase" value={entry.passphrase} onInput={(passphrase) => update({ passphrase })} placeholder="None" />
-        </Field>
-        <Field label="Passphrase hint" hint="Not hidden. Never write the passphrase itself here.">
-          <input class="input" value={entry.passphraseHint} readOnly={readOnly} onInput={(e) => update({ passphraseHint: e.currentTarget.value })} />
-        </Field>
-      </div>
+      <PassphraseFields entry={entry} update={update} />
     </Section>
+  )
+}
+
+/** Passphrase (hidden) plus a visible hint, for kinds that have one. */
+const PassphraseFields = ({ entry, update }: SectionArgs) => {
+  const { readOnly } = useUi()
+  const info = KIND_INFO[entry.kind]
+  if (!info.passphraseLabel) return null
+  return (
+    <div class="row">
+      <Field label={info.passphraseLabel} hint={info.passphraseHint}>
+        <SecretField label="Passphrase" value={entry.passphrase} onInput={(passphrase) => update({ passphrase })} placeholder="None" />
+      </Field>
+      <Field label="Passphrase hint" hint="Not hidden. Never write the passphrase itself here.">
+        <input class="input" value={entry.passphraseHint} readOnly={readOnly} onInput={(e) => update({ passphraseHint: e.currentTarget.value })} />
+      </Field>
+    </div>
   )
 }
 
 const levelClass = { ok: 'ok', info: 'info', warn: 'warn', error: 'error' } as const
 
-const PrivateKeySection = ({ entry, update }: SectionArgs) => {
-  const format = useAsync(() => detectKeyFormat(entry.privateKey), [entry.privateKey])
+/** The key or token itself, with format recognition. */
+const KeySection = ({ entry, update }: SectionArgs) => {
+  const info = KIND_INFO[entry.kind]
+  const format = useAsync(() => detectKeyFormat(entry.secret), [entry.secret])
   return (
-    <Section id={`${entry.id}:key`} title="Private key" icon="key" summary={entry.privateKey ? format?.label ?? 'set' : 'empty'} defaultOpen>
-      <Field label="Key" wide>
+    <Section id={`${entry.id}:key`} title={info.secretLabel} icon="key" summary={entry.secret ? format?.label ?? 'set' : 'empty'} defaultOpen>
+      <Field label={info.secret === 'token' ? 'Value' : 'Key'} wide>
         <SecretField
-          label="Private key"
-          value={entry.privateKey}
-          onInput={(privateKey) => update({ privateKey })}
-          placeholder="Hex, WIF, xprv, nsec, base58, keystore JSON…"
-          multiline
+          label={info.secretLabel}
+          value={entry.secret}
+          onInput={(secret) => update({ secret })}
+          placeholder={info.secretPlaceholder}
+          multiline={info.secret === 'key'}
           mono
         />
       </Field>
@@ -286,6 +341,58 @@ const PrivateKeySection = ({ entry, update }: SectionArgs) => {
         <p class={`status status-${levelClass[format.level]}`} role="status">
           <Icon name={format.level === 'ok' ? 'check' : format.level === 'info' ? 'shield' : 'alert'} /> {format.label}
           {format.detail && <span class="muted"> · {format.detail}</span>}
+        </p>
+      )}
+      <PassphraseFields entry={entry} update={update} />
+    </Section>
+  )
+}
+
+const CodesSection = ({ entry, update }: SectionArgs) => {
+  const count = entry.secret.split(/\n/).filter((line) => line.trim()).length
+  return (
+    <Section id={`${entry.id}:codes`} title="Recovery codes" icon="list" summary={count ? `${count} code${count === 1 ? '' : 's'}` : 'empty'} defaultOpen>
+      <Field label="Codes" hint="One per line. Delete or mark a code once used." wide>
+        <SecretField label="Recovery codes" value={entry.secret} onInput={(secret) => update({ secret })} placeholder="One code per line" multiline mono />
+      </Field>
+    </Section>
+  )
+}
+
+const PublicKeySection = ({ entry, update }: SectionArgs) => {
+  const { readOnly } = useUi()
+  const config = KIND_INFO[entry.kind].publicKey
+  if (!config) return null
+  const summary = [entry.publicInfo && 'public key', entry.fingerprint].filter(Boolean).join(' · ')
+  const pgpFingerprintBad =
+    entry.kind === 'pgpKey' && entry.fingerprint && !/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(entry.fingerprint.replace(/\s/g, ''))
+  return (
+    <Section id={`${entry.id}:public`} title="Public info" icon="eye" summary={summary || 'empty'} defaultOpen={false}>
+      <p class="muted small helper">Not secret. Lets you match this entry to a server, keyring or recipient.</p>
+      <Field label={config.label} wide>
+        <textarea
+          class="input mono"
+          rows={entry.publicInfo ? 3 : 2}
+          value={entry.publicInfo}
+          placeholder={config.placeholder}
+          readOnly={readOnly}
+          onInput={(e) => update({ publicInfo: e.currentTarget.value })}
+          spellcheck={false}
+        />
+      </Field>
+      <Field label={config.fingerprintLabel} wide>
+        <input
+          class="input mono"
+          value={entry.fingerprint}
+          placeholder={config.fingerprintPlaceholder}
+          readOnly={readOnly}
+          onInput={(e) => update({ fingerprint: e.currentTarget.value.trim() })}
+          spellcheck={false}
+        />
+      </Field>
+      {pgpFingerprintBad && (
+        <p class="status status-warn">
+          <Icon name="alert" /> PGP fingerprints are 40 hex characters (64 for newer v6 keys).
         </p>
       )}
     </Section>
@@ -421,7 +528,7 @@ const CustomFieldsSection = ({ entry, update }: SectionArgs) => {
   const { readOnly } = useUi()
   const setField = (id: string, patch: Partial<Entry['customFields'][number]>) =>
     update({ customFields: entry.customFields.map((f) => (f.id === id ? { ...f, ...patch } : f)) })
-  const primary = entry.kind === 'other'
+  const primary = KIND_INFO[entry.kind].secret === 'fields'
   return (
     <Section
       id={`${entry.id}:fields`}
@@ -586,14 +693,16 @@ interface BodyProps {
 export const EntryBody = ({ entry, reminderMonths, onUpdate, showLabel, focusLabel = false }: BodyProps) => {
   const { readOnly } = useUi()
   const update = (patch: Partial<Entry>) => !readOnly && onUpdate(patch)
+  const secret = KIND_INFO[entry.kind].secret
   return (
     <div class="entry-body">
       <DetailsSection entry={entry} update={update} showLabel={showLabel} focusLabel={focusLabel} />
-      {entry.kind === 'mnemonic' && <MnemonicSection entry={entry} update={update} />}
-      {entry.kind === 'privateKey' && <PrivateKeySection entry={entry} update={update} />}
-      {entry.kind === 'other' && <CustomFieldsSection entry={entry} update={update} />}
-      {entry.kind !== 'other' && <PublicInfoSection entry={entry} update={update} />}
-      {entry.kind !== 'other' && <CustomFieldsSection entry={entry} update={update} />}
+      {secret === 'words' && <MnemonicSection entry={entry} update={update} />}
+      {(secret === 'key' || secret === 'token') && <KeySection entry={entry} update={update} />}
+      {secret === 'codes' && <CodesSection entry={entry} update={update} />}
+      {secret === 'fields' && <CustomFieldsSection entry={entry} update={update} />}
+      {isCrypto(entry.kind) ? <PublicInfoSection entry={entry} update={update} /> : <PublicKeySection entry={entry} update={update} />}
+      {secret !== 'fields' && <CustomFieldsSection entry={entry} update={update} />}
       <BackupsSection entry={entry} update={update} reminderMonths={reminderMonths} />
       <NotesSection entry={entry} update={update} />
       <footer class="editor-footer muted small">

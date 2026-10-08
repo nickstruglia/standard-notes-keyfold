@@ -1,8 +1,9 @@
 import { Icon } from './icons'
 import { Popover } from './Popover'
 import { FILTERS, type Filter } from './EntryList'
-import { GROUP_OPTIONS, KIND_LABELS } from './labels'
+import { GROUP_OPTIONS, KIND_ICONS, KIND_LABELS } from './labels'
 import type { EntryKind, GroupBy, SortOrder, VaultSettings } from '../lib/vault'
+import { GROUP_LABELS, KINDS, KIND_INFO, type KindGroup } from '../lib/kinds'
 
 export type ViewPrefs = Pick<VaultSettings, 'layout' | 'density' | 'singleExpand' | 'groupBy' | 'sort'>
 
@@ -26,7 +27,7 @@ interface Props {
   onHideAll: () => void
 }
 
-const ADD_KINDS: EntryKind[] = ['mnemonic', 'privateKey', 'other']
+const ADD_GROUPS: KindGroup[] = ['crypto', 'keys', 'secrets']
 
 const IconButton = ({ icon, label, onClick, disabled }: { icon: Parameters<typeof Icon>[0]['name']; label: string; onClick: () => void; disabled?: boolean }) => (
   <button type="button" class="button small" aria-label={label} title={label} onClick={onClick} disabled={disabled}>
@@ -62,18 +63,25 @@ export const Toolbar = (p: Props) => {
         {!p.readOnly && (
           <Popover label="Add" icon="plus" kind="menu" buttonClass="button small primary">
             {(close) =>
-              ADD_KINDS.map((kind) => (
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="menu-item"
-                  onClick={() => {
-                    close()
-                    p.onAdd(kind)
-                  }}
-                >
-                  <Icon name={kind === 'mnemonic' ? 'seed' : kind === 'privateKey' ? 'key' : 'lock'} /> {KIND_LABELS[kind]}
-                </button>
+              ADD_GROUPS.map((group) => (
+                <div role="group" aria-label={GROUP_LABELS[group]} class="menu-group">
+                  <div class="menu-heading" aria-hidden="true">
+                    {GROUP_LABELS[group]}
+                  </div>
+                  {KINDS.filter((kind) => KIND_INFO[kind].group === group).map((kind) => (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="menu-item"
+                      onClick={() => {
+                        close()
+                        p.onAdd(kind)
+                      }}
+                    >
+                      <Icon name={KIND_ICONS[kind]} /> {KIND_LABELS[kind]}
+                    </button>
+                  ))}
+                </div>
               ))
             }
           </Popover>

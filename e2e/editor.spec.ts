@@ -26,13 +26,13 @@ const open = async (page: Page, text = '') => {
 type App = ReturnType<Page['frameLocator']>
 
 /** Adds an entry through the toolbar's Add menu. */
-const add = async (app: App, kind: 'Seed phrase' | 'Private key' | 'Other secret') => {
+const add = async (app: App, kind: string) => {
   await app.getByRole('button', { name: 'Add' }).click()
   await app.getByRole('menuitem', { name: kind }).click()
 }
 
 const vaultText = (entries: object[], settings: object = {}) =>
-  JSON.stringify({ app: 'sn-crypto-vault', version: 1, vault: { entries, settings } })
+  JSON.stringify({ app: 'keyfold', version: 1, vault: { entries, settings } })
 
 const seed = (id: string, label: string, chain: string, phrase: string) => ({
   id,
@@ -62,7 +62,7 @@ const pastePhrase = async (page: Page, phrase: string) => {
 
 test('creates a seed phrase entry, validates it and saves JSON to the note', async ({ page }) => {
   const { app, errors } = await open(page)
-  await expect(app.getByText('No secrets yet.')).toBeVisible()
+  await expect(app.getByText('No keys yet.')).toBeVisible()
 
   await add(app, 'Seed phrase')
   await app.getByLabel('Label').fill('Cold storage')
@@ -74,10 +74,10 @@ test('creates a seed phrase entry, validates it and saves JSON to the note', asy
 
   await expect.poll(() => noteText(page)).toContain('"yellow"')
   const doc = JSON.parse(await noteText(page))
-  expect(doc.app).toBe('sn-crypto-vault')
+  expect(doc.app).toBe('keyfold')
   expect(doc.vault.entries[0].label).toBe('Cold storage')
   expect(doc.vault.entries[0].words.join(' ')).toBe(PHRASE)
-  expect(await preview(page)).toBe('Crypto Vault: 1 seed phrase')
+  expect(await preview(page)).toBe('Keyfold: 1 seed phrase')
   expect(await preview(page)).not.toContain('legal')
 
   // A typo is flagged with suggestions.
@@ -106,7 +106,7 @@ test('reveals, copies with a toast, and hides all', async ({ page }) => {
 
 test('detects private key formats', async ({ page }) => {
   const { app } = await open(page)
-  await add(app, 'Private key')
+  await add(app, 'Wallet key')
   // The key stays hidden (not even in the page) until revealed; clicking it reveals and focuses it.
   await app.getByRole('button', { name: /Private key \(hidden\)/ }).click()
   await expect(app.getByLabel('Private key', { exact: true })).toBeFocused()
@@ -134,7 +134,7 @@ test('vault password encrypts the note, locks and unlocks', async ({ page }) => 
   const stored = await noteText(page)
   expect(stored).not.toContain('legal')
   expect(stored).not.toContain('Encrypted wallet')
-  expect(await preview(page)).toBe('Crypto Vault (password protected)')
+  expect(await preview(page)).toBe('Keyfold (password protected)')
 
   await app.getByRole('button', { name: 'Lock now' }).click()
   await expect(app.getByText('Vault locked')).toBeVisible()
@@ -189,7 +189,7 @@ test('never overwrites a note that has other content', async ({ page }) => {
 
 test('applies Standard Notes themes', async ({ page }) => {
   const { app, errors } = await open(page)
-  await expect(app.getByText('No secrets yet.')).toBeVisible()
+  await expect(app.getByText('No keys yet.')).toBeVisible()
   await page.getByRole('button', { name: 'Toggle dark theme' }).click()
   await expect
     .poll(() => app.locator('body').evaluate((el) => getComputedStyle(el).backgroundColor))
@@ -201,6 +201,7 @@ test('demo mode when opened directly', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText(/Demo mode/)).toBeVisible()
   await expect(page.getByText('Example: cold storage')).toBeVisible()
+  await expect(page.getByText('Example: deploy key')).toBeVisible()
   await expect(page.getByText('http://127.0.0.1:4173/ext.json')).toBeVisible()
 })
 
@@ -214,7 +215,7 @@ test('keeps several seed phrases in one note as expandable cards', async ({ page
     await app.getByRole('button', { name: 'Collapse all' }).click()
   }
   await expect.poll(async () => (await noteJson(page))?.vault?.entries?.length).toBe(3)
-  expect(await preview(page)).toBe('Crypto Vault: 3 seed phrases')
+  expect(await preview(page)).toBe('Keyfold: 3 seed phrases')
   await expect(app.getByText('3 entries')).toBeVisible()
 
   // Collapsed cards show one line each and no word fields.
@@ -347,4 +348,45 @@ test('typing a space moves to the next word, as Android keyboards need', async (
   })
   await expect(app.getByLabel('Word 2', { exact: true })).toBeFocused()
   await expect.poll(async () => (await noteJson(page))?.vault?.entries?.[0]?.words?.[0]).toBe('abandon')
+})
+
+test('stores an SSH key and an expiring API token alongside crypto entries', async ({ page }) => {
+  const { app, errors } = await open(page)
+  // An openssh-key-v1 file built from random bytes: right shape, not a usable key.
+  const u32 = (n: number) => { const x = Buffer.alloc(4); x.writeUInt32BE(n); return x }
+  const s = (b: Buffer) => Buffer.concat([u32(b.length), b])
+  const blob = Buffer.concat([
+    Buffer.from('openssh-key-v1\0'),
+    s(Buffer.from('none')),
+    s(Buffer.from('none')),
+    s(Buffer.alloc(0)),
+    u32(1),
+    s(Buffer.concat([s(Buffer.from('ssh-ed25519')), s(Buffer.from(Array.from({ length: 32 }, (_, i) => i)))])),
+    s(Buffer.alloc(64, 7)),
+  ])
+  const key = `-----BEGIN OPENSSH PRIVATE KEY-----\n${blob.toString('base64').match(/.{1,70}/g)!.join('\n')}\n-----END OPENSSH PRIVATE KEY-----`
+
+  // The Add menu lists crypto first.
+  await app.getByRole('button', { name: 'Add' }).click()
+  const groups = await app.getByRole('group').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+  expect(groups).toEqual(['Crypto', 'Keys', 'Secrets'])
+  await app.getByRole('menuitem', { name: 'SSH key' }).click()
+  await app.getByLabel('Label').fill('Deploy key')
+  await app.getByLabel('Hosts / service').fill('github.com')
+  await app.getByRole('button', { name: /Private key \(hidden\)/ }).click()
+  await app.getByLabel('Private key', { exact: true }).fill(key)
+  await expect(app.getByText('OpenSSH private key (Ed25519)')).toBeVisible()
+  await expect(app.getByText('Not passphrase-protected.', { exact: false })).toBeVisible()
+
+  await app.getByRole('button', { name: 'Collapse all' }).click()
+  await add(app, 'API key or token')
+  await app.getByLabel('Label').fill('CI token')
+  const soon = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10)
+  await app.getByLabel('Expires on').fill(soon)
+  await app.getByRole('button', { name: 'Collapse all' }).click()
+  await expect(app.getByText(/expires in [45] days/)).toBeVisible()
+
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.map((e: any) => e.kind)).toEqual(['apiKey', 'sshKey'])
+  expect(await preview(page)).toBe('Keyfold: 1 SSH key, 1 API key')
+  expect(errors).toEqual([])
 })

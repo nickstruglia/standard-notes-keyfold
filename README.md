@@ -1,73 +1,84 @@
-# Crypto Vault for Standard Notes
+# Keyfold
 
-A [Standard Notes](https://standardnotes.com) editor for crypto seed phrases and private keys.
-Each note becomes a small vault of entries with hidden fields, labels, descriptions,
-passphrases, creation dates, backup tracking and an optional second password.
+**Your keys and recovery phrases, folded into one encrypted Standard Notes note.**
 
-![Crypto Vault showing a 12-word seed phrase with masked words and a valid checksum](docs/screenshot.png)
+Keyfold is a [Standard Notes](https://standardnotes.com) plugin for crypto seed phrases and wallet keys, plus the other cryptographic keys in your life: SSH and PGP keys, API tokens and recovery codes. Each one folds into a one-line card. Secrets stay hidden until you reveal them, every format Keyfold knows is checked for typos, and an optional second password can encrypt the whole note again.
 
-## Features
+![Keyfold showing a 12-word seed phrase with masked words and a valid checksum](docs/screenshot.png)
 
-**Many secrets in one note, without the clutter**
-- Keep as many seed phrases, keys and other secrets in a single note as you like.
-- Each entry is a card that folds into one line (label, chain, wallet, word count, checksum and backup status) and opens when you click it. Expand all, collapse all, or have opening one card close the others.
-- Inside a card, every section (details, seed phrase, public info, extra fields, backups, notes) collapses to a one-line summary. The secret opens by default and the rest stays folded.
-- Group entries by type, chain, wallet or first tag, each group collapsible with a count. Sort by last update, label or creation date.
-- Compact density turns every entry into a single row with tighter spacing.
-- Prefer a list beside an editor? Switch the layout under **View**. View choices are saved in the note, so every device uses them.
+## Crypto first
 
 **Seed phrases of any length**
 - 12, 15, 18, 21 and 24-word BIP39 phrases, 20/33-word SLIP-39 shares, 25-word Monero seeds, or any custom count up to 48 words.
 - Each word sits in its own numbered, masked field. Paste a whole phrase into word 1 and it fills the grid.
 - BIP39 checks: every word is checked against the official wordlist, the checksum is verified, typos get "did you mean" suggestions, and 4-letter prefixes expand to the full word.
 - Electrum 2.0+ seeds are validated and their type shown (standard, segwit, 2FA).
-- A hidden field for the BIP39 passphrase ("25th word"), plus a visible hint field for it.
+- A hidden field for the BIP39 passphrase ("25th word"), plus a visible hint for it.
 
-**Private keys**
-- A masked field that recognizes the format and checks it: hex (raw 32-byte / EVM), WIF (Bitcoin, Litecoin, Dogecoin, testnet) with Base58Check checksum, BIP32 extended keys (xprv/yprv/zprv/tprv...), Nostr `nsec`, Bech32 secret keys, Solana base58 and byte-array keypairs, and encrypted V3 keystore JSON.
-- It warns you if you paste public data instead (an address, xpub or npub) or a key with a broken checksum.
+**Wallet keys**
+- Recognizes and checks hex (raw 32-byte / EVM), WIF (Bitcoin, Litecoin, Dogecoin, testnet) with its Base58Check checksum, BIP32 extended keys (xprv, yprv, zprv, tprv...), Nostr `nsec`, Cardano and other Bech32 secret keys, Solana base58 and byte-array keypairs, and encrypted V3 keystore JSON (with a field for its password).
+- Warns you if you paste public data instead (an address, xpub or npub) or a key with a broken checksum.
 
-**For every entry**
-- Label, description, chain, wallet or device, date created, tags, favorite and archive flags.
-- Public info that is safe to show: derivation path, master fingerprint, addresses or xpub.
-- Custom fields for PINs, keystore passwords, 2FA backup codes or multisig details, each shown or hidden as you choose.
-- Backup locations, each with a "last checked" date. Entries whose backups were not checked recently are flagged.
-- Free-form notes, plus automatic added/updated timestamps.
-- Search (never matches secret values), filters, sorting, duplicate, and delete with undo.
+**Wallet details**
+- Chain or coin, wallet or device, derivation path, master fingerprint, addresses or xpub.
+- Backup locations, each with a "last checked" date. Seed phrases, wallet keys, PGP keys and recovery codes whose backups were not checked recently are flagged.
 
-**Privacy and security**
+## Every other key
+
+| Type | What Keyfold recognizes |
+|---|---|
+| **SSH keys** | OpenSSH private keys (Ed25519, RSA, ECDSA, security keys), including whether they are passphrase-protected or were copied incompletely; PuTTY keys; PEM keys. Public key and fingerprint fields. |
+| **PGP keys** | Armored private key blocks, with the armor checksum verified. Public key and fingerprint fields. |
+| **API keys and tokens** | GitHub, GitLab, npm, Stripe, Slack, Google, AWS, SendGrid, DigitalOcean, `sk-` style keys and JSON Web Tokens. |
+| **Other keys** | age, WireGuard and other 32-byte base64 keys, PEM (PKCS#1, PKCS#8, SEC1), JSON Web Keys, Google Cloud service account files. |
+| **Recovery codes** | One code per line, hidden, with a count. |
+| **Other secrets** | Any mix of named fields, each shown or hidden as you choose. |
+
+SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days before they expire, and a filter lists everything expiring or expired. Keyfold also warns when you paste a public key, certificate or PGP message where a private key belongs.
+
+## Many keys in one note, without the clutter
+
+- Each entry is a card that folds into one line (label, type, chain or service, word count, checksum, expiry and backup status) and opens when you click it. Expand all, collapse all, or have opening one card close the others.
+- Inside a card, every section collapses to a one-line summary. The secret opens by default and the rest stays folded.
+- Entries are grouped by type, with seed phrases and wallet keys first. You can also group by chain or service, wallet or account, or first tag, and sort by last update, label or creation date.
+- Compact density turns every entry into a single row. A list-beside-editor layout is available under **View**.
+- Search covers labels, descriptions, tags, notes and public details, never secret values.
+- Favorites, archive, duplicate, delete with undo, custom fields and free-form notes on every entry.
+
+## Privacy and security
+
 - Secrets are masked until revealed and hide themselves again after 30 seconds (configurable), or when the editor loses focus.
-- Copying a secret clears the clipboard after 30 seconds (configurable). Inside Standard Notes the browser only allows this during a click or tap, so if it is blocked, the clipboard clears on your next click, or with the **Clear now** button.
-- Hidden secrets are real password fields: phone keyboards do not learn them, screen readers do not read them aloud, and they cannot be copied with Ctrl+C. Multi-line secrets are not on the page at all until revealed.
-- Spellcheck, autocorrect, autofill and password-manager capture are turned off on secret fields, so words are not sent to cloud spellcheckers.
+- Hidden secrets are real password fields: phone keyboards do not learn them, screen readers do not read them aloud, and they cannot be copied with Ctrl+C. Multi-line keys are not on the page at all until revealed.
+- Copying a secret clears the clipboard after 30 seconds. Inside Standard Notes the browser only allows this during a click or tap, so if it is blocked the clipboard clears on your next click, or with the **Clear now** button.
+- Spellcheck, autocorrect, autofill and password-manager capture are off on secret fields, so nothing is sent to cloud spellcheckers.
 - An optional **vault password** adds a second layer on top of Standard Notes' end-to-end encryption: AES-256-GCM with a key derived by PBKDF2-SHA256 (600,000 iterations). The vault auto-locks after inactivity.
-- **No network access.** The editor's Content Security Policy blocks every outgoing connection, and it has only two runtime dependencies (Preact and Standard Notes' component relay).
+- **No network access.** The Content Security Policy blocks every outgoing connection, and there are only two runtime dependencies (Preact and Standard Notes' component relay).
 - An optional privacy screen blurs the vault whenever the editor is not focused.
-- Follows Standard Notes' "Prevent editing" lock and its themes, adapts to narrow (mobile) and wide layouts, and never overwrites a note that already had other content.
-
-## Mobile
-
-The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so the vault needs an internet connection on a phone (the desktop app can keep an offline copy). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
-
-Not yet verified on real devices: Safari's engine (iPhones use WebKit) and Standard Notes themes inside the mobile apps. Try it with a dummy phrase first.
+- Follows Standard Notes' "Prevent editing" lock and its themes, and never overwrites a note that already had other content.
 
 ## Install
 
 1. In Standard Notes, open **Preferences → Plugins**.
-2. Under **Install custom plugin**, paste this URL and install:
+2. Under **Install Custom Plugin**, paste this URL and install:
    ```
-   https://nickstruglia.github.io/sn-crypto/ext.json
+   https://nickstruglia.github.io/sn-keyfold/ext.json
    ```
-3. Create a new note, open the editor menu, and choose **Crypto Vault**.
+3. Create a new note, open the editor menu, and choose **Keyfold**.
 
 Open the URL above without `ext.json` to try a demo in your browser (sample data only, nothing is saved).
 
+## Mobile
+
+The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so Keyfold needs an internet connection on a phone (the desktop app can keep an offline copy). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
+
+Not yet verified on real devices: Safari's engine (iPhones use WebKit) and Standard Notes themes inside the mobile apps. Try it with a dummy phrase first.
+
 ## Security notes
 
-Read these before storing real funds' keys:
+Read these before storing keys that protect real funds or systems:
 
-- **Who you trust.** Standard Notes loads this editor from the URL in `ext.json` every time you open the note, so whoever controls that site controls the code that sees your secrets. If you are not the maintainer, fork this repository and install from your own GitHub Pages URL (see below).
-- **Your device.** A compromised computer, malicious browser extension or keylogger can read anything you type or reveal. For large amounts, keep keys on a hardware wallet and treat this vault as an encrypted record, not your only backup.
+- **Who you trust.** Standard Notes loads Keyfold from the URL in `ext.json` every time you open the note, so whoever controls that site controls the code that sees your secrets. If you are not the maintainer, fork this repository and install from your own GitHub Pages URL (see below).
+- **Your device.** A compromised computer, malicious browser extension or keylogger can read anything you type or reveal. For large amounts, keep keys on a hardware wallet and treat Keyfold as an encrypted record, not your only backup.
 - **Note history.** Standard Notes keeps earlier versions of a note. If you add a vault password after entering secrets, older revisions still hold the data without that extra layer (Standard Notes' own encryption still protects them). Set the password on a new vault before adding secrets, or delete the old revisions.
 - **Clipboard.** Clipboard clearing is best effort. Clipboard history tools (Windows Win+V, clipboard managers, universal clipboard) may keep copies.
 - **Forgotten vault password.** It cannot be recovered by anyone.
@@ -79,17 +90,17 @@ See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerab
 The note text is JSON. Without a vault password:
 
 ```json
-{ "app": "sn-crypto-vault", "version": 1, "readme": "...", "vault": { "entries": [...], "settings": {...} } }
+{ "app": "keyfold", "version": 1, "readme": "...", "vault": { "entries": [...], "settings": {...} } }
 ```
 
 With a vault password, `vault` is replaced by an encrypted blob:
 
 ```json
-{ "app": "sn-crypto-vault", "version": 1, "readme": "...",
+{ "app": "keyfold", "version": 1, "readme": "...",
   "encryption": { "kdf": "PBKDF2-SHA256", "iterations": 600000, "salt": "...", "cipher": "AES-256-GCM", "iv": "...", "ciphertext": "..." } }
 ```
 
-The note preview shown in Standard Notes' note list contains only counts (for example "Crypto Vault: 2 seed phrases"), never labels or secrets.
+The preview in Standard Notes' note list contains only counts (for example "Keyfold: 2 seed phrases, 1 SSH key"), never labels or secrets.
 
 ## Development
 
@@ -101,7 +112,7 @@ npm run dev        # then open http://localhost:5173/dev/host.html?sandbox=0
 npm run typecheck
 npm test           # unit tests (validators checked against @scure reference libraries and published test vectors)
 npm run build
-npm run test:e2e   # Playwright tests against the production build
+npm run test:e2e   # Playwright tests against the production build, on desktop and phone screen sizes
 ```
 
 `dev/host.html` is a mock of the Standard Notes side of the plugin protocol. It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device.
@@ -111,9 +122,9 @@ npm run test:e2e   # Playwright tests against the production build
 1. Fork this repository.
 2. In the fork, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
 3. Run the **Deploy to GitHub Pages** workflow (Actions tab), or push to the default branch.
-4. Install `https://<your-username>.github.io/sn-crypto/ext.json` in Standard Notes.
+4. Install `https://<your-username>.github.io/sn-keyfold/ext.json` in Standard Notes.
 
-The workflow writes your Pages URL into `ext.json` and publishes `sn-crypto.zip` for the desktop app's offline mode.
+The workflow writes your Pages URL into `ext.json` and publishes `keyfold.zip` for the desktop app's offline mode.
 
 ## License
 

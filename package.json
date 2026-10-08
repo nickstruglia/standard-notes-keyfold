@@ -1,14 +1,14 @@
 {
-  "name": "sn-crypto",
+  "name": "sn-keyfold",
   "version": "1.0.0",
-  "description": "Crypto Vault: a Standard Notes editor for seed phrases and private keys.",
+  "description": "Keyfold: a Standard Notes plugin for crypto seed phrases, wallet keys and other cryptographic keys.",
   "author": "Nicholas Truglia (https://github.com/nickstruglia)",
   "license": "MIT",
   "private": true,
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nickstruglia/sn-crypto.git"
+    "url": "https://github.com/nickstruglia/sn-keyfold.git"
   },
   "scripts": {
     "dev": "vite",

@@ -7,7 +7,7 @@ Do not open a public issue for security problems, and never include real seed ph
 
 ## Threat model
 
-Crypto Vault is a Standard Notes editor. It runs in an iframe and exchanges note text with Standard Notes
+Keyfold is a Standard Notes editor. It runs in an iframe and exchanges note text with Standard Notes
 through `postMessage`.
 
 **What it protects against**
@@ -20,7 +20,8 @@ through `postMessage`.
 | Cloud spellcheck, autofill and password managers capturing secrets | `spellcheck`, `autocorrect`, `autocapitalize` and `autocomplete` are off on secret fields, and common password-manager ignore attributes are set. Hidden values sit in real password inputs, so phone keyboards do not learn them, accessibility tools do not expose them, macOS Secure Input applies and Ctrl+C cannot copy them; multi-line secrets are not in the page until revealed. |
 | Secrets left in the clipboard | The clipboard is cleared after a delay. Standard Notes' sandbox blocks clipboard writes outside a click, so when the timed clear is blocked it happens on the next click or tap, or with a "Clear now" button. |
 | Secrets leaking into the note list | The note preview contains counts only. |
-| Typos in transcribed backups | BIP39 wordlist and checksum checks, Electrum seed version checks, and Base58Check/Bech32 checksum checks on keys. |
+| Typos and incomplete copies | BIP39 wordlist and checksum checks, Electrum seed version checks, Base58Check and Bech32 checksums on wallet keys, PGP armor checksums, and a structural check that OpenSSH keys were copied completely. |
+| Pasting the wrong half of a key pair | Warnings for addresses, xpubs, npubs, SSH and PGP public keys, certificates, age recipients and publishable API keys. |
 
 **What it cannot protect against**
 
@@ -36,5 +37,6 @@ through `postMessage`.
 - The deploy workflow gives its build job read-only permissions and installs dependencies without install scripts; only the deploy job can publish.
 - Key-derivation settings read from a note are bounded, and a vault saved with fewer iterations than the current default is re-encrypted at the default after unlock.
 - Only two runtime dependencies: `preact` and `@standardnotes/component-relay`. Validators (BIP39, Base58Check, Bech32) are small local implementations, tested against the audited `@scure` libraries.
-- The editor does not generate seed phrases or keys. Generate them on a hardware wallet or other dedicated device.
+- Keyfold does not generate seed phrases or keys. Generate them on a hardware wallet, with `ssh-keygen`, `gpg` or `age-keygen`, or on another dedicated device.
+- Key recognition only reads structure and checksums. Keyfold never decrypts or uses your keys.
 - Printing is disabled in the editor's print stylesheet, to keep secrets out of printer queues.

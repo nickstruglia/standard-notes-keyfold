@@ -1,10 +1,57 @@
 import { createEntry, emptyVault, serializePlain, today } from './lib/vault'
+import { randomBytes, toBase64, utf8 } from './lib/encoding'
 
-// Sample content for demo mode. Every secret here is a published test vector
-// (anyone can sweep funds sent to them), never a real key.
+// Sample content for demo mode. Crypto secrets are published test vectors
+// (anyone can sweep funds sent to them). Other keys are random bytes in the
+// right shape, generated when the page loads; none of them is a usable key.
 const words = (phrase: string) => phrase.split(' ')
 
+const sshString = (bytes: Uint8Array) => {
+  const out = new Uint8Array(4 + bytes.length)
+  new DataView(out.buffer).setUint32(0, bytes.length)
+  out.set(bytes, 4)
+  return out
+}
+const concat = (...parts: Uint8Array[]) => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let offset = 0
+  for (const p of parts) {
+    out.set(p, offset)
+    offset += p.length
+  }
+  return out
+}
+
+/** An openssh-key-v1 file with the right structure but random key bytes. */
+const sampleSshKey = () => {
+  const publicBlob = concat(sshString(utf8('ssh-ed25519')), sshString(randomBytes(32)))
+  const file = concat(
+    utf8('openssh-key-v1\0'),
+    sshString(utf8('aes256-ctr')),
+    sshString(utf8('bcrypt')),
+    sshString(randomBytes(24)),
+    new Uint8Array([0, 0, 0, 1]),
+    sshString(publicBlob),
+    sshString(randomBytes(144)),
+  )
+  const body = toBase64(file).match(/.{1,70}/g)!.join('\n')
+  return {
+    privateKey: `-----BEGIN OPENSSH PRIVATE KEY-----\n${body}\n-----END OPENSSH PRIVATE KEY-----`,
+    publicKey: `ssh-ed25519 ${toBase64(publicBlob)} demo@example`,
+  }
+}
+
+const randomChars = (n: number, alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789') =>
+  Array.from(randomBytes(n), (b) => alphabet[b % alphabet.length]).join('')
+
+const inDays = (days: number) => {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
 export const demoNoteText = (): string => {
+  const ssh = sampleSshKey()
   const vault = emptyVault()
   vault.entries.push(
     createEntry('mnemonic', {
@@ -40,30 +87,43 @@ export const demoNoteText = (): string => {
       derivationPath: "m/44'/60'/0'/0/0",
       createdOn: '2023-11-20',
     }),
-    createEntry('mnemonic', {
-      label: 'Example: NFT wallet',
-      chain: 'Solana',
-      wallet: 'Phantom',
-      tags: ['example'],
-      words: words('zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong'),
-      createdOn: '2024-05-06',
-    }),
     createEntry('privateKey', {
       label: 'Example: paper wallet',
       description: 'WIF test vector from the Bitcoin wiki.',
       chain: 'Bitcoin',
       tags: ['example'],
-      privateKey: '5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ',
+      secret: '5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ',
       createdOn: '2013-04-01',
     }),
-    createEntry('other', {
-      label: 'Example: exchange 2FA backup codes',
+    createEntry('sshKey', {
+      label: 'Example: deploy key',
+      description: 'Random bytes in OpenSSH format, not a working key.',
+      service: 'github.com',
+      account: 'git',
       tags: ['example'],
-      customFields: [
-        { id: 'f1', label: 'Backup codes', value: '1234-5678 9012-3456', hidden: true },
-        { id: 'f2', label: 'Account email', value: 'you@example.com', hidden: false },
-      ],
+      secret: ssh.privateKey,
+      passphrase: 'example passphrase',
+      publicInfo: ssh.publicKey,
+      expiresOn: inDays(365),
+    }),
+    createEntry('apiKey', {
+      label: 'Example: CI token',
+      description: 'Random characters in GitHub token format, not a real token.',
+      service: 'GitHub',
+      account: 'release workflow',
+      tags: ['example'],
+      secret: `ghp_${randomChars(36)}`,
+      expiresOn: inDays(12),
+    }),
+    createEntry('recoveryCodes', {
+      label: 'Example: exchange 2FA backup codes',
+      service: 'Kraken',
+      account: 'you@example.com',
+      tags: ['example'],
+      secret: Array.from({ length: 8 }, () => `${randomChars(4, '0123456789')}-${randomChars(4, '0123456789')}`).join('\n'),
     }),
   )
+  // Newest first in "recently updated" order, crypto at the top.
+  vault.entries.forEach((entry, i) => (entry.updatedAt = new Date(Date.now() - i * 60_000).toISOString()))
   return serializePlain(vault)
 }

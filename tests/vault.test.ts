@@ -15,7 +15,7 @@ const sampleVault = () => {
   const vault = emptyVault()
   vault.entries.push(
     createEntry('mnemonic', { label: 'Cold storage', words: ['abandon', 'ability'], passphrase: 'p' }),
-    createEntry('privateKey', { label: 'Hot key', privateKey: 'deadbeef' }),
+    createEntry('privateKey', { label: 'Hot key', secret: 'deadbeef' }),
     createEntry('other', { label: 'Old', archived: true }),
   )
   return vault
@@ -54,10 +54,10 @@ describe('parseNote', () => {
 describe('previewText', () => {
   it('summarizes counts without leaking labels or secrets', () => {
     const preview = previewText(sampleVault())
-    expect(preview).toBe('Crypto Vault: 1 seed phrase, 1 private key')
+    expect(preview).toBe('Keyfold: 1 seed phrase, 1 wallet key')
     expect(preview).not.toContain('Cold')
-    expect(previewText(null)).toBe('Crypto Vault (password protected)')
-    expect(previewText(emptyVault())).toBe('Crypto Vault: empty')
+    expect(previewText(null)).toBe('Keyfold (password protected)')
+    expect(previewText(emptyVault())).toBe('Keyfold: empty')
   })
 })
 

@@ -1,19 +1,20 @@
 import type { ComponentChildren } from 'preact'
 import { Icon } from './icons'
-import { KIND_GROUP_LABELS, KIND_LABELS } from './labels'
+import { KIND_GROUP_LABELS, KIND_ICONS, KIND_LABELS } from './labels'
 import { useAsync } from './context'
 import { checkMnemonic } from '../lib/mnemonic'
-import { type Entry, type EntryKind, type GroupBy, type SortOrder, isBackupDue } from '../lib/vault'
+import { KINDS, isCrypto } from '../lib/kinds'
+import { type Entry, type EntryKind, type GroupBy, type SortOrder, daysUntilExpiry, isBackupDue, isExpiringSoon } from '../lib/vault'
 
-export type Filter = 'all' | 'mnemonic' | 'privateKey' | 'other' | 'favorites' | 'attention' | 'archived'
+export type Filter = 'all' | 'crypto' | EntryKind | 'favorites' | 'attention' | 'expiring' | 'archived'
 
 export const FILTERS: [Filter, string][] = [
   ['all', 'All'],
-  ['mnemonic', 'Seed phrases'],
-  ['privateKey', 'Private keys'],
-  ['other', 'Other'],
+  ['crypto', 'Crypto (seeds and wallet keys)'],
+  ...KINDS.map((kind): [Filter, string] => [kind, KIND_GROUP_LABELS[kind]]),
   ['favorites', 'Favorites'],
   ['attention', 'Backup check due'],
+  ['expiring', 'Expiring or expired'],
   ['archived', 'Archived'],
 ]
 
@@ -25,6 +26,8 @@ const matches = (entry: Entry, query: string): boolean => {
     entry.description,
     entry.chain,
     entry.wallet,
+    entry.service,
+    entry.account,
     entry.notes,
     entry.derivationPath,
     entry.fingerprint,
@@ -44,16 +47,19 @@ export const visibleEntries = (entries: Entry[], filter: Filter, sort: SortOrder
     .filter((e) => (filter === 'archived' ? e.archived : !e.archived))
     .filter((e) => {
       switch (filter) {
-        case 'mnemonic':
-        case 'privateKey':
-        case 'other':
-          return e.kind === filter
+        case 'all':
+        case 'archived':
+          return true
+        case 'crypto':
+          return isCrypto(e.kind)
         case 'favorites':
           return e.favorite
         case 'attention':
           return isBackupDue(e, reminderMonths)
+        case 'expiring':
+          return isExpiringSoon(e)
         default:
-          return true
+          return e.kind === filter
       }
     })
     .filter((e) => matches(e, query.trim()))
@@ -74,12 +80,12 @@ export interface EntryGroup {
   entries: Entry[]
 }
 
-const KIND_ORDER: EntryKind[] = ['mnemonic', 'privateKey', 'other']
+const KIND_ORDER: EntryKind[] = KINDS
 const EMPTY_GROUP_LABEL: Record<GroupBy, string> = {
   none: '',
   kind: '',
-  chain: 'No chain',
-  wallet: 'No wallet',
+  chain: 'No chain or service',
+  wallet: 'No wallet or account',
   tag: 'Untagged',
 }
 
@@ -87,7 +93,13 @@ const EMPTY_GROUP_LABEL: Record<GroupBy, string> = {
 export const groupEntries = (entries: Entry[], groupBy: GroupBy): EntryGroup[] => {
   if (groupBy === 'none') return [{ key: 'all', label: '', entries }]
   const valueOf = (e: Entry): string =>
-    groupBy === 'kind' ? e.kind : groupBy === 'chain' ? e.chain.trim() : groupBy === 'wallet' ? e.wallet.trim() : (e.tags[0] ?? '').trim()
+    groupBy === 'kind'
+      ? e.kind
+      : groupBy === 'chain'
+        ? (e.chain || e.service).trim()
+        : groupBy === 'wallet'
+          ? (e.wallet || e.account).trim()
+          : (e.tags[0] ?? '').trim()
 
   const groups = new Map<string, EntryGroup>()
   for (const entry of entries) {
@@ -163,14 +175,32 @@ const ChecksumBadge = ({ entry }: { entry: Entry }) => {
 }
 
 /** Icon, label, public details and status pills for an entry. Never shows secrets. */
+const ExpiryPill = ({ entry }: { entry: Entry }) => {
+  const days = daysUntilExpiry(entry)
+  if (days === null || !isExpiringSoon(entry)) return null
+  return days < 0 ? (
+    <span class="pill pill-error" title={`Expired ${entry.expiresOn}`}>
+      expired
+    </span>
+  ) : (
+    <span class="pill pill-warn" title={`Expires ${entry.expiresOn}`}>
+      {days === 0 ? 'expires today' : `expires in ${days} day${days === 1 ? '' : 's'}`}
+    </span>
+  )
+}
+
 export const EntrySummary = ({ entry, reminderMonths }: { entry: Entry; reminderMonths: number }) => {
-  const meta = [entry.chain, entry.wallet, entry.kind === 'mnemonic' ? `${entry.words.length} words` : '']
+  const meta = (
+    isCrypto(entry.kind)
+      ? [entry.chain, entry.wallet, entry.kind === 'mnemonic' ? `${entry.words.length} words` : '']
+      : [KIND_LABELS[entry.kind], entry.service, entry.account]
+  )
     .filter(Boolean)
     .join(' · ')
   return (
     <>
       <span class={`entry-icon badge-${entry.kind}`} title={KIND_LABELS[entry.kind]}>
-        <Icon name={entry.kind === 'mnemonic' ? 'seed' : entry.kind === 'privateKey' ? 'key' : 'lock'} />
+        <Icon name={KIND_ICONS[entry.kind]} />
       </span>
       <span class="entry-main">
         <span class="entry-title">
@@ -182,6 +212,7 @@ export const EntrySummary = ({ entry, reminderMonths }: { entry: Entry; reminder
           {entry.kind === 'mnemonic' && <ChecksumBadge entry={entry} />}
           {entry.passphrase && <span class="pill">+ passphrase</span>}
           {entry.archived && <span class="pill">archived</span>}
+          <ExpiryPill entry={entry} />
           {isBackupDue(entry, reminderMonths) && <span class="pill pill-warn">backup check due</span>}
           {entry.tags.map((t) => (
             <span class="pill" key={t}>
@@ -197,14 +228,16 @@ export const EntrySummary = ({ entry, reminderMonths }: { entry: Entry; reminder
 
 interface GroupProps {
   group: EntryGroup
+  /** A lone group is shown without a heading. */
+  bare: boolean
   collapsed: boolean
   onToggle: () => void
   children: ComponentChildren
 }
 
 /** A collapsible group heading. Ungrouped lists render their children directly. */
-export const Group = ({ group, collapsed, onToggle, children }: GroupProps) => {
-  if (!group.label) return <>{children}</>
+export const Group = ({ group, bare, collapsed, onToggle, children }: GroupProps) => {
+  if (!group.label || bare) return <>{children}</>
   const bodyId = `group-${group.key.replace(/[^a-z0-9]/gi, '-')}`
   return (
     <section class={`group ${collapsed ? 'collapsed' : ''}`}>
@@ -233,7 +266,13 @@ interface ListProps {
 export const EntryList = ({ groups, collapsedGroups, selectedId, reminderMonths, onSelect, onToggleGroup }: ListProps) => (
   <div class="entry-list">
     {groups.map((group) => (
-      <Group key={group.key} group={group} collapsed={collapsedGroups.has(group.key)} onToggle={() => onToggleGroup(group.key)}>
+      <Group
+        key={group.key}
+        group={group}
+        bare={groups.length === 1}
+        collapsed={collapsedGroups.has(group.key) && groups.length > 1}
+        onToggle={() => onToggleGroup(group.key)}
+      >
         <ul class="entry-rows" aria-label={group.label || 'Entries'}>
           {group.entries.map((entry) => (
             <li key={entry.id}>

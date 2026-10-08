@@ -1,4 +1,4 @@
-import { bytesEqual, fromHex, hasSubtleCrypto, sha256 } from './encoding'
+import { bytesEqual, fromBase64, fromHex, fromUtf8, hasSubtleCrypto, sha256 } from './encoding'
 
 // Recognizes common private key encodings so typos and mix-ups
 // (pasting an address or xpub instead of a key) are caught early.
@@ -152,13 +152,177 @@ const detectJson = (text: string): KeyFormat | null => {
       return {
         level: 'ok',
         label: 'Encrypted keystore (Web3 Secret Storage v3)',
-        detail: 'Store its password in a separate hidden field.',
+        detail: 'Store its password in the keystore password field.',
       }
+    }
+    if (obj.type === 'service_account' && typeof obj.private_key === 'string') {
+      return { level: 'ok', label: 'Google Cloud service account key', detail: 'JSON key file with a private key.' }
+    }
+    const jwk = Array.isArray(obj.keys) ? (obj.keys[0] as Record<string, unknown> | undefined) : obj
+    if (jwk && typeof jwk.kty === 'string') {
+      return 'd' in jwk || 'k' in jwk
+        ? { level: 'ok', label: `JSON Web Key (${jwk.kty}, private)` }
+        : { level: 'warn', label: `JSON Web Key (${jwk.kty}, public)`, detail: PUBLIC_WARNING }
     }
     return { level: 'info', label: 'JSON document' }
   }
   return null
 }
+
+const SSH_KEY_TYPES: Record<string, string> = {
+  'ssh-ed25519': 'Ed25519',
+  'ssh-rsa': 'RSA',
+  'ssh-dss': 'DSA',
+  'ecdsa-sha2-nistp256': 'ECDSA P-256',
+  'ecdsa-sha2-nistp384': 'ECDSA P-384',
+  'ecdsa-sha2-nistp521': 'ECDSA P-521',
+  'sk-ssh-ed25519@openssh.com': 'Ed25519 security key',
+  'sk-ecdsa-sha2-nistp256@openssh.com': 'ECDSA security key',
+}
+
+/** Reads the key type and cipher from an OpenSSH private key (openssh-key-v1 format). */
+export const readOpenSshKey = (base64Body: string): { keyType: string; encrypted: boolean } | null => {
+  let bytes: Uint8Array
+  try {
+    bytes = fromBase64(base64Body.replace(/\s+/g, ''))
+  } catch {
+    return null
+  }
+  const magic = 'openssh-key-v1\0'
+  if (fromUtf8(bytes.slice(0, magic.length)) !== magic) return null
+  let offset = magic.length
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const readBytes = (): Uint8Array => {
+    if (offset + 4 > bytes.length) throw new Error('truncated')
+    const length = view.getUint32(offset)
+    offset += 4
+    if (offset + length > bytes.length) throw new Error('truncated')
+    const out = bytes.slice(offset, offset + length)
+    offset += length
+    return out
+  }
+  try {
+    const cipher = fromUtf8(readBytes())
+    readBytes() // kdf name
+    readBytes() // kdf options
+    offset += 4 // number of keys
+    const publicKey = readBytes()
+    // The private section must be complete; a short read means part of the key was not copied.
+    readBytes()
+    const typeLength = new DataView(publicKey.buffer, publicKey.byteOffset).getUint32(0)
+    const keyType = fromUtf8(publicKey.slice(4, 4 + typeLength))
+    return { keyType, encrypted: cipher !== 'none' }
+  } catch {
+    return null
+  }
+}
+
+/** OpenPGP ASCII-armor checksum (CRC-24, RFC 4880). */
+const crc24 = (bytes: Uint8Array): number => {
+  let crc = 0xb704ce
+  for (const byte of bytes) {
+    crc ^= byte << 16
+    for (let i = 0; i < 8; i++) {
+      crc <<= 1
+      if (crc & 0x1000000) crc ^= 0x1864cfb
+    }
+  }
+  return crc & 0xffffff
+}
+
+/** null when the armor has no checksum line (allowed since RFC 9580), else whether it matches. */
+const pgpChecksumOk = (armor: string): boolean | null => {
+  const lines = armor.split(/\r?\n/).map((l) => l.trim())
+  const blank = lines.indexOf('')
+  const body = lines.slice(blank === -1 ? 1 : blank + 1).filter((l) => l && !l.startsWith('-----'))
+  const checksumLine = body.findIndex((l) => /^=[A-Za-z0-9+/]{4}$/.test(l))
+  if (checksumLine === -1) return null
+  try {
+    const data = fromBase64(body.slice(0, checksumLine).join(''))
+    const expected = fromBase64(body[checksumLine].slice(1))
+    return crc24(data) === ((expected[0] << 16) | (expected[1] << 8) | expected[2])
+  } catch {
+    return false
+  }
+}
+
+const PUBLIC_PEM: Record<string, string> = {
+  'PUBLIC KEY': 'PEM public key',
+  'RSA PUBLIC KEY': 'PEM RSA public key',
+  CERTIFICATE: 'Certificate',
+  'PGP PUBLIC KEY BLOCK': 'PGP public key block',
+  'SSH2 PUBLIC KEY': 'SSH public key (SSH2 format)',
+}
+
+const NOT_KEYS: Record<string, string> = {
+  'PGP MESSAGE': 'PGP message',
+  'PGP SIGNATURE': 'PGP signature',
+  'PGP SIGNED MESSAGE': 'PGP signed message',
+}
+
+const detectPem = (text: string): KeyFormat | null => {
+  const notKey = /-----BEGIN (PGP MESSAGE|PGP SIGNATURE|PGP SIGNED MESSAGE)-----/.exec(text)
+  if (notKey) return { level: 'warn', label: NOT_KEYS[notKey[1]], detail: 'This is not a key.' }
+  const match = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/.exec(text)
+  if (!match) {
+    return /-----BEGIN [A-Z0-9 ]+-----/.test(text)
+      ? { level: 'error', label: 'Key block is incomplete', detail: 'The matching -----END ...----- line is missing.' }
+      : null
+  }
+  const [, type, body] = match
+  const encrypted = /Proc-Type:\s*4,ENCRYPTED/i.test(body)
+  if (PUBLIC_PEM[type]) return { level: 'warn', label: PUBLIC_PEM[type], detail: PUBLIC_WARNING }
+  switch (type) {
+    case 'OPENSSH PRIVATE KEY': {
+      const key = readOpenSshKey(body)
+      if (!key) return { level: 'error', label: 'OpenSSH private key, but it could not be read', detail: 'Check that it was copied completely.' }
+      const name = SSH_KEY_TYPES[key.keyType] ?? key.keyType
+      return {
+        level: 'ok',
+        label: `OpenSSH private key (${name})`,
+        detail: key.encrypted ? 'Protected by a passphrase.' : 'Not passphrase-protected.',
+      }
+    }
+    case 'PGP PRIVATE KEY BLOCK': {
+      const checksum = pgpChecksumOk(match[0])
+      if (checksum === false) return { level: 'error', label: 'PGP private key, but the checksum fails', detail: 'Check for a typo or missing line.' }
+      return { level: 'ok', label: 'PGP private key block', detail: checksum ? 'Checksum OK.' : undefined }
+    }
+    case 'RSA PRIVATE KEY':
+      return { level: 'ok', label: 'PEM RSA private key (PKCS#1)', detail: encrypted ? 'Protected by a passphrase.' : undefined }
+    case 'EC PRIVATE KEY':
+      return { level: 'ok', label: 'PEM EC private key (SEC1)', detail: encrypted ? 'Protected by a passphrase.' : undefined }
+    case 'DSA PRIVATE KEY':
+      return { level: 'ok', label: 'PEM DSA private key', detail: encrypted ? 'Protected by a passphrase.' : undefined }
+    case 'PRIVATE KEY':
+      return { level: 'ok', label: 'PEM private key (PKCS#8)' }
+    case 'ENCRYPTED PRIVATE KEY':
+      return { level: 'ok', label: 'PEM private key (PKCS#8)', detail: 'Protected by a passphrase.' }
+    default:
+      return { level: 'info', label: `PEM block (${type.toLowerCase()})` }
+  }
+}
+
+const TOKENS: { pattern: RegExp; label: string; level?: KeyFormatLevel; detail?: string }[] = [
+  { pattern: /^gh[pousr]_[A-Za-z0-9]{36,}$/, label: 'GitHub token' },
+  { pattern: /^github_pat_\w{50,}$/, label: 'GitHub fine-grained token' },
+  { pattern: /^glpat-[\w-]{20,}$/, label: 'GitLab access token' },
+  { pattern: /^npm_[A-Za-z0-9]{36}$/, label: 'npm access token' },
+  { pattern: /^(sk|rk)_(live|test)_[A-Za-z0-9]{16,}$/, label: 'Stripe secret key' },
+  { pattern: /^pk_(live|test)_[A-Za-z0-9]{16,}$/, label: 'Stripe publishable key', level: 'warn', detail: PUBLIC_WARNING },
+  { pattern: /^xox[abposr]-[A-Za-z0-9-]{10,}$/, label: 'Slack token' },
+  { pattern: /^AIza[\w-]{35}$/, label: 'Google API key' },
+  {
+    pattern: /^(AKIA|ASIA)[0-9A-Z]{16}$/,
+    label: 'AWS access key ID',
+    level: 'info',
+    detail: 'The 40-character secret access key is a separate value; store it as well.',
+  },
+  { pattern: /^SG\.[\w-]{22}\.[\w-]{43}$/, label: 'SendGrid API key' },
+  { pattern: /^dop_v1_[a-f0-9]{64}$/, label: 'DigitalOcean token' },
+  { pattern: /^sk-[\w-]{20,}$/, label: 'API secret key (sk-…)' },
+  { pattern: /^eyJ[\w-]+\.eyJ[\w-]+\.[\w-]*$/, label: 'JSON Web Token', level: 'info', detail: 'Tokens like this usually expire.' },
+]
 
 export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> => {
   const text = input.trim()
@@ -167,6 +331,27 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
   if (text.startsWith('{') || text.startsWith('[')) {
     return detectJson(text) ?? { level: 'warn', label: 'Looks like JSON, but it does not parse.' }
   }
+
+  const pem = detectPem(text)
+  if (pem) return pem
+
+  const putty = /^PuTTY-User-Key-File-\d+:\s*(\S+)/.exec(text)
+  if (putty) {
+    const encrypted = !/^Encryption:\s*none/m.test(text)
+    return {
+      level: 'ok',
+      label: `PuTTY private key (${SSH_KEY_TYPES[putty[1]] ?? putty[1]})`,
+      detail: encrypted ? 'Protected by a passphrase.' : 'Not passphrase-protected.',
+    }
+  }
+
+  const sshPublic = /^(ssh-ed25519|ssh-rsa|ssh-dss|ecdsa-sha2-nistp\d+|sk-[\w.@-]+)\s+AAAA[A-Za-z0-9+/]+=*(\s|$)/.exec(text)
+  if (sshPublic) {
+    return { level: 'warn', label: `SSH public key (${SSH_KEY_TYPES[sshPublic[1]] ?? sshPublic[1]})`, detail: PUBLIC_WARNING }
+  }
+
+  const token = TOKENS.find((t) => t.pattern.test(text))
+  if (token) return { level: token.level ?? 'ok', label: token.label, detail: token.detail }
 
   const words = text.split(/\s+/)
   if (words.length >= 12 && words.every((w) => /^[a-z]+$/i.test(w))) {
@@ -198,6 +383,10 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
   if (bech) {
     const data = bech.variant === 'bech32' ? fromWords(bech.words) : null
     switch (bech.hrp) {
+      case 'age-secret-key-':
+        return { level: 'ok', label: 'age secret key', detail: 'Checksum OK.' }
+      case 'age':
+        return { level: 'warn', label: 'age recipient (public key)', detail: PUBLIC_WARNING }
       case 'nsec':
         return data?.length === 32
           ? { level: 'ok', label: 'Nostr private key (nsec)', detail: 'Checksum OK.' }
@@ -221,6 +410,17 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
   }
   if (/^[a-z0-9]+1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{6,}$/.test(text) && /^(nsec|npub|bc|tb)1/.test(text)) {
     return { level: 'error', label: 'Bech32 checksum fails', detail: 'Check for a typo.' }
+  }
+
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(text) && text.length % 4 === 0 && /[+/=]/.test(text)) {
+    try {
+      const bytes = fromBase64(text)
+      return bytes.length === 32
+        ? { level: 'ok', label: 'Base64, 32 bytes', detail: 'The format of WireGuard keys and many other 256-bit keys.' }
+        : { level: 'info', label: `Base64, ${bytes.length} bytes` }
+    } catch {
+      // not base64 after all
+    }
   }
 
   if (/^[1-9A-HJ-NP-Za-km-z]+$/.test(text)) {

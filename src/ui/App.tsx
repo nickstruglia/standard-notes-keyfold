@@ -528,24 +528,24 @@ export const App = ({ host }: { host: Host }) => {
     <div class="empty">
       <Icon name="shield" size={28} />
       <p>
-        <strong>No secrets yet.</strong>
+        <strong>No keys yet.</strong>
       </p>
       <p class="small muted">
-        Keep as many seed phrases and keys in this note as you like. Each one folds into a single line until you open it,
-        and secrets stay hidden until you reveal them.
+        Keep every seed phrase and wallet key in this note, plus SSH, PGP and API keys and recovery codes. Each one folds
+        into a single line until you open it, and secrets stay hidden until you reveal them.
       </p>
       {!readOnly && (
-        <div class="row tight center">
-          <button type="button" class="button primary small" onClick={() => addEntry('mnemonic')}>
-            <Icon name="plus" /> Seed phrase
-          </button>
-          <button type="button" class="button small" onClick={() => addEntry('privateKey')}>
-            <Icon name="plus" /> Private key
-          </button>
-          <button type="button" class="button small" onClick={() => addEntry('other')}>
-            <Icon name="plus" /> Other secret
-          </button>
-        </div>
+        <>
+          <div class="row tight center">
+            <button type="button" class="button primary small" onClick={() => addEntry('mnemonic')}>
+              <Icon name="plus" /> Seed phrase
+            </button>
+            <button type="button" class="button small" onClick={() => addEntry('privateKey')}>
+              <Icon name="plus" /> Wallet key
+            </button>
+          </div>
+          <p class="small muted">Other key types are under Add.</p>
+        </>
       )}
     </div>
   )

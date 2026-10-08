@@ -44,7 +44,7 @@ jobs:
           mkdir -p pkg
           cp -r dist/. pkg/
           node -e "const p=require('./package.json');console.log(JSON.stringify({name:p.name,version:p.version,sn:p.sn},null,2))" > pkg/package.json
-          (cd pkg && zip -qr ../dist/sn-crypto.zip .)
+          (cd pkg && zip -qr ../dist/keyfold.zip .)
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist

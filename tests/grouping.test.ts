@@ -20,7 +20,7 @@ describe('groupEntries', () => {
   it('groups by type in a fixed order', () => {
     expect(shape('kind')).toEqual([
       ['Seed phrases', 'AB'],
-      ['Private keys', 'C'],
+      ['Wallet keys', 'C'],
       ['Other secrets', 'D'],
     ])
   })
@@ -29,8 +29,16 @@ describe('groupEntries', () => {
     expect(shape('chain')).toEqual([
       ['Bitcoin', 'AB'],
       ['Ethereum', 'C'],
-      ['No chain', 'D'],
+      ['No chain or service', 'D'],
     ])
+  })
+
+  it('groups crypto chains together with services of other keys', () => {
+    const list = [
+      createEntry('mnemonic', { label: 'A', chain: 'Bitcoin' }),
+      createEntry('sshKey', { label: 'B', service: 'github.com' }),
+    ]
+    expect(groupEntries(list, 'chain').map((g) => g.label)).toEqual(['Bitcoin', 'github.com'])
   })
 
   it('uses the first tag only, so each entry appears once', () => {
@@ -60,7 +68,7 @@ describe('view settings', () => {
       layout: 'stacked',
       density: 'comfortable',
       singleExpand: false,
-      groupBy: 'none',
+      groupBy: 'kind',
       sort: 'updated',
     })
     const s = normalizeVault({ settings: { layout: 'split', density: 'bogus', groupBy: 'chain', singleExpand: true } }).settings
