@@ -6,18 +6,21 @@ Keyfold is a [Standard Notes](https://standardnotes.com) plugin for crypto seed 
 
 ![Keyfold showing a 12-word seed phrase with masked words and a valid checksum](docs/screenshot.png)
 
+<img src="docs/screenshot-mobile.png" alt="Keyfold on a phone with a dark Standard Notes theme" width="300">
+
 ## Crypto first
 
 **Seed phrases of any length**
 - 12, 15, 18, 21 and 24-word BIP39 phrases, 20/33-word SLIP-39 shares, 25-word Monero seeds, or any custom count up to 48 words.
 - Each word sits in its own numbered, masked field. Paste a whole phrase into word 1 and it fills the grid. Numbered phrases copied from a backup sheet with several columns are put back in order.
 - BIP39 checks: every word is checked against the official wordlist, the checksum is verified, typos get "did you mean" suggestions, and English 4-letter abbreviations can be expanded with one click. Words are never changed without you asking: for BIP39 phrases in other languages or old Electrum seeds, choose **Other**.
-- Electrum 2.0+ seeds are validated and their type shown (standard, segwit, 2FA).
+- Electrum 2.0+ seeds are validated and their type shown (standard, segwit, 2FA); an Electrum seed entered as BIP39 is pointed out.
+- Monero 25- and 13-word seeds have their checksum word verified.
 - A hidden field for the BIP39 passphrase ("25th word"), plus a visible hint for it.
 
 **Wallet keys**
-- Recognizes and checks hex (raw 32-byte / EVM), WIF (Bitcoin, Litecoin, Dogecoin, testnet) with its Base58Check checksum, BIP32 extended keys (xprv, yprv, zprv, tprv...), Nostr `nsec`, Cardano and other Bech32 secret keys, Solana base58 and byte-array keypairs, and encrypted V3 keystore JSON (with a field for its password).
-- Warns you if you paste public data instead (an address, xpub or npub) or a key with a broken checksum.
+- Recognizes and checks hex (raw 32-byte / EVM), WIF (Bitcoin, Litecoin, Dogecoin, Dash, testnet) with its Base58Check checksum, BIP32 and SLIP-132 extended keys (xprv, yprv, zprv, Yprv, Zprv, tprv, Litecoin and Dogecoin versions...), Nostr `nsec`, Cardano and other Bech32 secret keys in either case, Solana base58 and byte-array keypairs, and encrypted keystores (V3 and EIP-2335, with a field for the password).
+- Warns you if you paste public data instead (an address, xpub or npub), a key with a broken checksum or a missing character, or a private key into a field that is not hidden.
 
 **Wallet details**
 - Chain or coin, wallet or device, derivation path, master fingerprint, addresses or xpub.
@@ -27,10 +30,10 @@ Keyfold is a [Standard Notes](https://standardnotes.com) plugin for crypto seed 
 
 | Type | What Keyfold recognizes |
 |---|---|
-| **SSH keys** | OpenSSH private keys (Ed25519, RSA, ECDSA, security keys), including whether they are passphrase-protected or were copied incompletely; PuTTY keys; PEM keys. Public key and fingerprint fields. |
+| **SSH keys** | OpenSSH private keys (Ed25519, RSA, ECDSA, security keys), including whether they are passphrase-protected or were copied incompletely; PuTTY keys (checked for missing lines); PEM keys. Public key and fingerprint fields. |
 | **PGP keys** | Armored private key blocks, with the armor checksum verified. Public key and fingerprint fields. |
 | **API keys and tokens** | GitHub, GitLab, npm, Stripe, Slack, Google, AWS, SendGrid, DigitalOcean, `sk-` style keys and JSON Web Tokens. |
-| **Other keys** | age, WireGuard and other 32-byte base64 keys, PEM (PKCS#1, PKCS#8, SEC1), JSON Web Keys, Google Cloud service account files. |
+| **Other keys** | age (also whole age-keygen files), WireGuard and other 32-byte base64 keys, PEM (PKCS#1, PKCS#8, SEC1; checked for a missing line, and certificate + key bundles), JSON Web Keys and key sets, Google Cloud service account files, AWS credentials files. |
 | **Recovery codes** | One code per line, hidden, with a count. |
 | **Other secrets** | Any mix of named fields, each shown or hidden as you choose. |
 
@@ -42,19 +45,21 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 - Inside a card, every section collapses to a one-line summary. The secret opens by default and the rest stays folded.
 - Entries are grouped by type, with seed phrases and wallet keys first. You can also group by chain or service, wallet or account, or first tag, and sort by last update, label or creation date.
 - Compact density turns every entry into a single row. A list-beside-editor layout is available under **View**.
-- Search covers labels, descriptions, tags, notes and public details, never secret values.
+- Search covers labels, descriptions, tags, notes, public details, visible custom fields and backup locations, never secret values. Labels sort numerically ("Wallet 2" before "Wallet 10").
 - Favorites, archive, duplicate, delete with undo, custom fields and free-form notes on every entry.
 
 ## Privacy and security
 
 - Secrets are masked until revealed and hide themselves again after 30 seconds (configurable), or when the editor loses focus. With a keyboard, a seed word shows only while you type it, never just because it has focus.
 - Hidden secrets are real password fields: phone keyboards do not learn them, screen readers do not read them aloud, and they cannot be copied with Ctrl+C. Multi-line keys are not on the page at all until revealed.
-- Copying a secret clears the clipboard after 30 seconds. Inside Standard Notes the browser only allows this during a click or tap, so if it is blocked the clipboard clears on your next click, or with the **Clear now** button.
+- Copying a secret (with the Copy button, Ctrl+C or a long press) clears the clipboard after 30 seconds. Inside Standard Notes the browser only allows this during a click or tap, so it happens on your next click or tap in Keyfold, or with **Clear now**; locking the vault clears it right away. It stays copied if you leave the note first.
+- Warnings when a visible field gives a secret away: a passphrase hint containing the passphrase, notes repeating the key or several seed words, a private key pasted into public info.
 - Spellcheck, autocorrect, autofill and password-manager capture are off on secret fields, so nothing is sent to cloud spellcheckers.
-- An optional **vault password** adds a second layer on top of Standard Notes' end-to-end encryption: AES-256-GCM with a key derived by PBKDF2-SHA256 (600,000 iterations). The vault auto-locks after inactivity.
+- An optional **vault password** adds a second layer on top of Standard Notes' end-to-end encryption: AES-256-GCM with a key derived by PBKDF2-SHA256 (600,000 iterations). The vault auto-locks after inactivity. Weak passwords need an explicit confirmation, and restoring an unprotected version from note history is called out.
 - **Nothing leaves the editor.** The Content Security Policy blocks every outgoing connection, and scripts, images and fonts from other sites. The only outside files it loads are your Standard Notes theme's stylesheets. The only runtime dependency is Preact, and Keyfold talks to Standard Notes with its own small implementation of the plugin message protocol.
 - An optional privacy screen blurs the vault whenever the editor is not focused.
-- Follows Standard Notes' "Prevent editing" lock and its themes (built-in and installed, on desktop, web and phones), and never overwrites a note that already had other content.
+- Follows Standard Notes' "Prevent editing" lock and its themes (built-in and installed, on desktop, web and phones), and never overwrites a note that already had other content. A vault saved by a newer Keyfold opens read-only rather than being rewritten.
+- Keyboard and screen-reader friendly, with Windows High Contrast support.
 
 ## Install
 
@@ -77,7 +82,7 @@ If a Keyfold note opens in another editor in between (for example an empty Authe
 
 ## Mobile
 
-The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so Keyfold needs an internet connection on a phone. The desktop app keeps an offline copy and updates it whenever a newer version is published (each deploy has its own version number). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
+The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so Keyfold needs an internet connection on a phone. The desktop app keeps an offline copy and updates it whenever a newer version is published (each deploy has its own version number). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android, iPhone and 320 px phone sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**. Phrases in other scripts (Japanese, Chinese...) can be pasted but not typed on phones, because phone keyboards only offer Latin letters in hidden fields.
 
 The phone apps send Standard Notes' built-in themes to plugins as embedded stylesheets (`data:` URLs), which Keyfold accepts. Until those are ready they send a link to the app's local theme file, which a plugin loaded from the web cannot open, so Keyfold loads the same theme from Standard Notes' web app (`app.standardnotes.com`) instead.
 
@@ -115,7 +120,9 @@ The preview in Standard Notes' note list contains only counts (for example "Keyf
 
 ## Recovering your data without Keyfold
 
-If Keyfold does not open (offline phone, plugin removed, site down), open the note menu and change the note type to **Plain text** to read the JSON. Do not edit it there, and never convert it to **Super**: Super's import collapses spaces and drops text after a `<`. If you did, restore the note from **Note history**.
+**Recovery viewer.** Open [the site with `#open`](https://nickstruglia.github.io/standard-notes-keyfold/#open), or unzip [`keyfold.zip`](https://nickstruglia.github.io/standard-notes-keyfold/keyfold.zip) and open `index.html#open` from disk to work offline. Paste the note's text, enter the vault password if it has one, and read your entries. It is read-only and saves nothing.
+
+To get the note's text, or if Keyfold does not open at all (offline phone, plugin removed, site down), open the note menu and change the note type to **Plain text** to read the JSON. Do not edit it there, and never convert it to **Super**: Super's import collapses spaces and drops text after a `<`. If you did, restore the note from **Note history**.
 
 A plain vault is readable as is: each entry has its `label`, `kind`, `words` (in order) or `secret`, and `\n` in a value is a line break.
 
