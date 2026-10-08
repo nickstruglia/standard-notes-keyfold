@@ -4,9 +4,9 @@ import { Icon, type IconName } from './icons'
 import { SecretField } from './Secret'
 import { WordGrid } from './WordGrid'
 import { KIND_LABELS } from './labels'
-import { SECRET_ATTRS, useAsync, useSection, useUi } from './context'
+import { EXACT_ATTRS, SECRET_ATTRS, useAsync, useSection, useUi } from './context'
 import { COMMON_WORD_COUNTS, MAX_WORDS, SCHEMES, type MnemonicScheme, checkMnemonic } from '../lib/mnemonic'
-import { detectKeyFormat } from '../lib/keyformat'
+import { detectKeyFormat, findPrivateMaterial } from '../lib/keyformat'
 import { type Entry, daysUntilExpiry, isBackupDue, lastVerified, today } from '../lib/vault'
 import { KIND_INFO, isCrypto } from '../lib/kinds'
 import { newId } from '../lib/encoding'
@@ -186,7 +186,7 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
               <input class="input" list="services" value={entry.service} readOnly={readOnly} onInput={(e) => update({ service: e.currentTarget.value })} />
             </Field>
             <Field label={info.accountLabel}>
-              <input class="input" value={entry.account} readOnly={readOnly} onInput={(e) => update({ account: e.currentTarget.value })} spellcheck={false} />
+              <input class="input" value={entry.account} readOnly={readOnly} onInput={(e) => update({ account: e.currentTarget.value })} {...EXACT_ATTRS} />
             </Field>
           </>
         )}
@@ -314,7 +314,7 @@ const PassphraseFields = ({ entry, update }: SectionArgs) => {
         <SecretField label="Passphrase" value={entry.passphrase} onInput={(passphrase) => update({ passphrase })} placeholder="None" />
       </Field>
       <Field label="Passphrase hint" hint="Not hidden. Never write the passphrase itself here.">
-        <input class="input" value={entry.passphraseHint} readOnly={readOnly} onInput={(e) => update({ passphraseHint: e.currentTarget.value })} />
+        <input class="input" value={entry.passphraseHint} readOnly={readOnly} onInput={(e) => update({ passphraseHint: e.currentTarget.value })} {...EXACT_ATTRS} />
       </Field>
     </div>
   )
@@ -360,11 +360,38 @@ const CodesSection = ({ entry, update }: SectionArgs) => {
   )
 }
 
+/** Warns when private key material was pasted into a field that is shown in clear. */
+const PrivateMaterialWarning = ({ text }: { text: string }) => {
+  const found = useAsync(() => findPrivateMaterial(text), [text])
+  if (!found) return null
+  return (
+    <p class="status status-error" role="status">
+      <Icon name="alert" /> This looks like private key material ({found}). This field is not hidden: move it to the secret field.
+    </p>
+  )
+}
+
+/** Fingerprints: keep what was typed, tidy pasted extras when the field is left. */
+const tidyFingerprint = (value: string, master: boolean) => {
+  let v = value.trim()
+  if (master) {
+    // "[73c5da0a/84h/0h/0h]" (descriptor key origin), "0x73c5da0a", spaces.
+    v = v.replace(/^\[([0-9a-fA-F]{8})[^\]]*\].*$/, '$1').replace(/^0x/i, '').replace(/\s+/g, '')
+  }
+  return v
+}
+
+/** Derivation paths: straight apostrophes, lowercase m. */
+const tidyPath = (value: string) => value.trim().replace(/[’‘′`]/g, "'").replace(/^M\//, 'm/')
+
 const PublicKeySection = ({ entry, update }: SectionArgs) => {
   const { readOnly } = useUi()
   const config = KIND_INFO[entry.kind].publicKey
   if (!config) return null
-  const summary = [entry.publicInfo && 'public key', entry.fingerprint].filter(Boolean).join(' · ')
+  const fingerprintLeak = useAsync(() => findPrivateMaterial(entry.fingerprint), [entry.fingerprint])
+  const summary = [entry.publicInfo && 'public key', entry.fingerprint && (fingerprintLeak ? 'fingerprint' : entry.fingerprint)]
+    .filter(Boolean)
+    .join(' · ')
   const pgpFingerprintBad =
     entry.kind === 'pgpKey' && entry.fingerprint && !/^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(entry.fingerprint.replace(/\s/g, ''))
   return (
@@ -378,19 +405,25 @@ const PublicKeySection = ({ entry, update }: SectionArgs) => {
           placeholder={config.placeholder}
           readOnly={readOnly}
           onInput={(e) => update({ publicInfo: e.currentTarget.value })}
-          spellcheck={false}
+          {...EXACT_ATTRS}
         />
       </Field>
+      <PrivateMaterialWarning text={entry.publicInfo} />
       <Field label={config.fingerprintLabel} wide>
         <input
           class="input mono"
           value={entry.fingerprint}
           placeholder={config.fingerprintPlaceholder}
           readOnly={readOnly}
-          onInput={(e) => update({ fingerprint: e.currentTarget.value.trim() })}
-          spellcheck={false}
+          onInput={(e) => update({ fingerprint: e.currentTarget.value })}
+          onBlur={(e) => {
+            const tidy = tidyFingerprint(e.currentTarget.value, false)
+            if (tidy !== entry.fingerprint) update({ fingerprint: tidy })
+          }}
+          {...EXACT_ATTRS}
         />
       </Field>
+      <PrivateMaterialWarning text={entry.fingerprint} />
       {pgpFingerprintBad && (
         <p class="status status-warn">
           <Icon name="alert" /> PGP fingerprints are 40 hex characters (64 for newer v6 keys).
@@ -403,7 +436,11 @@ const PublicKeySection = ({ entry, update }: SectionArgs) => {
 const PublicInfoSection = ({ entry, update }: SectionArgs) => {
   const { readOnly } = useUi()
   const filled = Boolean(entry.derivationPath || entry.fingerprint || entry.publicInfo)
-  const summary = [entry.derivationPath, entry.fingerprint, entry.publicInfo && 'addresses'].filter(Boolean).join(' · ')
+  const fingerprintLeak = useAsync(() => findPrivateMaterial(entry.fingerprint), [entry.fingerprint])
+  const summary = [entry.derivationPath, entry.fingerprint && (fingerprintLeak ? 'fingerprint' : entry.fingerprint), entry.publicInfo && 'addresses']
+    .filter(Boolean)
+    .join(' · ')
+  const path = entry.derivationPath.trim()
   return (
     <Section id={`${entry.id}:public`} title="Public info" icon="eye" summary={summary || 'empty'} defaultOpen={false}>
       <p class="muted small helper">Not secret. Helps you recognize the wallet without revealing the secret.</p>
@@ -416,7 +453,11 @@ const PublicInfoSection = ({ entry, update }: SectionArgs) => {
             placeholder="m/84'/0'/0'"
             readOnly={readOnly}
             onInput={(e) => update({ derivationPath: e.currentTarget.value })}
-            spellcheck={false}
+            onBlur={(e) => {
+              const tidy = tidyPath(e.currentTarget.value)
+              if (tidy !== entry.derivationPath) update({ derivationPath: tidy })
+            }}
+            {...EXACT_ATTRS}
           />
         </Field>
         <Field label="Master fingerprint">
@@ -424,19 +465,25 @@ const PublicInfoSection = ({ entry, update }: SectionArgs) => {
             class="input mono"
             value={entry.fingerprint}
             placeholder="e.g. 73c5da0a"
-            maxLength={8}
             readOnly={readOnly}
-            onInput={(e) => update({ fingerprint: e.currentTarget.value.trim() })}
-            spellcheck={false}
+            onInput={(e) => update({ fingerprint: e.currentTarget.value })}
+            onBlur={(e) => {
+              const tidy = tidyFingerprint(e.currentTarget.value, true)
+              if (tidy !== entry.fingerprint) update({ fingerprint: tidy })
+            }}
+            {...EXACT_ATTRS}
           />
         </Field>
       </div>
-      {entry.derivationPath && !/^m(\/\d+['hH]?)*$/.test(entry.derivationPath.trim()) && (
+      {path && !/^m(\/\d+['hH]?)*$/.test(path) && (
         <p class="status status-warn">
-          <Icon name="alert" /> Derivation paths look like m/84'/0'/0'.
+          <Icon name="alert" />{' '}
+          {/[’‘′`]/.test(path)
+            ? "Use straight apostrophes (') in derivation paths; curly ones are fixed when you leave the field."
+            : "Derivation paths look like m/84'/0'/0'."}
         </p>
       )}
-      {entry.fingerprint && !/^[0-9a-fA-F]{8}$/.test(entry.fingerprint) && (
+      {entry.fingerprint && !fingerprintLeak && !/^[0-9a-fA-F]{8}$/.test(entry.fingerprint.trim()) && (
         <p class="status status-warn">
           <Icon name="alert" /> A master fingerprint is 8 hex characters.
         </p>
@@ -449,9 +496,11 @@ const PublicInfoSection = ({ entry, update }: SectionArgs) => {
           placeholder="First receive address, xpub/zpub…"
           readOnly={readOnly}
           onInput={(e) => update({ publicInfo: e.currentTarget.value })}
-          spellcheck={false}
+          {...EXACT_ATTRS}
         />
       </Field>
+      <PrivateMaterialWarning text={entry.publicInfo} />
+      <PrivateMaterialWarning text={entry.fingerprint} />
     </Section>
   )
 }
@@ -494,6 +543,7 @@ const BackupsSection = ({ entry, update, reminderMonths }: SectionArgs & { remin
             aria-label="Backup location"
             readOnly={readOnly}
             onInput={(e) => setBackup(b.id, { location: e.currentTarget.value })}
+            {...EXACT_ATTRS}
           />
           <input
             class="input"
@@ -573,6 +623,7 @@ const CustomFieldsSection = ({ entry, update }: SectionArgs) => {
                 aria-label={f.label || 'Field value'}
                 readOnly={readOnly}
                 onInput={(e) => setField(f.id, { value: e.currentTarget.value })}
+                {...EXACT_ATTRS}
               />
             ) : (
               <input
@@ -581,6 +632,7 @@ const CustomFieldsSection = ({ entry, update }: SectionArgs) => {
                 aria-label={f.label || 'Field value'}
                 readOnly={readOnly}
                 onInput={(e) => setField(f.id, { value: e.currentTarget.value })}
+                {...EXACT_ATTRS}
                 onPaste={(e) => {
                   // A multi-line paste switches the field to multi-line instead of losing the line breaks.
                   const text = e.clipboardData?.getData('text') ?? ''
@@ -597,7 +649,13 @@ const CustomFieldsSection = ({ entry, update }: SectionArgs) => {
           {!readOnly && (
             <div class="custom-actions">
               <label class="check small">
-                <input type="checkbox" checked={f.hidden} onChange={(e) => setField(f.id, { hidden: e.currentTarget.checked })} /> Hidden
+                <input
+                  type="checkbox"
+                  checked={f.hidden}
+                  aria-label={`Hide ${f.label || 'field'} value`}
+                  onChange={(e) => setField(f.id, { hidden: e.currentTarget.checked })}
+                />{' '}
+                Hidden
               </label>
               <button
                 type="button"

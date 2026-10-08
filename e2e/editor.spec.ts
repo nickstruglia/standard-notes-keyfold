@@ -367,6 +367,21 @@ test('a theme stylesheet cannot load images or fonts from other sites', async ({
   expect(requested).toEqual(['https://evil.test/theme.css'])
 })
 
+test('warns about a private key in public info and tidies pasted fingerprints and paths', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: /Public info/ }).click()
+  const xprv = 'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+  await app.getByLabel('Addresses / xpub').fill(xprv)
+  await expect(app.getByText(/This looks like private key material \(Extended private key/)).toBeVisible()
+  const fingerprint = app.getByLabel('Master fingerprint')
+  await fingerprint.fill("[73c5da0a/84h/0h/0h]")
+  await app.getByLabel('Derivation path').fill('M/84’/0’/0’')
+  await expect(fingerprint).toHaveValue('73c5da0a')
+  await app.getByLabel('Addresses / xpub').focus()
+  await expect(app.getByLabel('Derivation path')).toHaveValue("m/84'/0'/0'")
+})
+
 test('demo mode when opened directly', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText(/Demo mode/)).toBeVisible()

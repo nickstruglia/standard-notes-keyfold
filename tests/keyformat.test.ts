@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { bech32, createBase58check } from '@scure/base'
 import { sha256 as nobleSha256 } from '@noble/hashes/sha2.js'
-import { base58CheckDecode, detectKeyFormat } from '../src/lib/keyformat'
+import { base58CheckDecode, detectKeyFormat, findPrivateMaterial } from '../src/lib/keyformat'
 import { randomBytes, toHex } from '../src/lib/encoding'
 
 const b58c = createBase58check(nobleSha256)
@@ -194,3 +194,73 @@ describe('other key formats', () => {
     expect(await label(`eyJ${chars(10)}.eyJ${chars(10)}.${chars(10)}`)).toBe('JSON Web Token')
   })
 })
+
+/** Changes one character to another valid character of the same alphabet. */
+const typo = (text: string, alphabet: string, at = 20) => {
+  const c = text[at]
+  const next = alphabet[(alphabet.indexOf(c) + 1) % alphabet.length]
+  return text.slice(0, at) + next + text.slice(at + 1)
+}
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+const BECH = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
+
+describe('typo detection beyond Bitcoin', () => {
+  it('flags typos in Litecoin, Dogecoin and Dash WIF keys', async () => {
+    for (const version of [0xb0, 0x9e, 0xcc]) {
+      const wif = b58c.encode(new Uint8Array([version, ...randomBytes(32), 1]))
+      expect((await detectKeyFormat(wif))?.level).toBe('ok')
+      expect((await detectKeyFormat(typo(wif, B58)))?.label).toMatch(/checksum fails/)
+    }
+  })
+
+  it('flags typos in age keys (uppercase, as age-keygen writes them) and Cardano keys', async () => {
+    const age = bech32.encode('age-secret-key-', bech32.toWords(randomBytes(32)), false).toUpperCase()
+    expect((await detectKeyFormat(age))?.label).toBe('age secret key')
+    expect((await detectKeyFormat(typo(age, BECH.toUpperCase(), 30)))?.label).toBe('Bech32 checksum fails')
+    const xsk = bech32.encode('addr_xsk', bech32.toWords(randomBytes(64)), false)
+    expect((await detectKeyFormat(typo(xsk, BECH, 30)))?.label).toBe('Bech32 checksum fails')
+  })
+
+  it('reports a missing character in an extended key', async () => {
+    const xprv = 'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+    expect((await detectKeyFormat(xprv.slice(0, 60) + xprv.slice(61)))?.label).toMatch(/missing or extra/)
+  })
+})
+
+const CERT = '-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUQ\n-----END CERTIFICATE-----'
+const EC_KEY = '-----BEGIN EC PRIVATE KEY-----\nMHcCAQEEIIrYSSNQFaA2Hwf1duRSxKtLYX5CB04fSeQ6tF1aY/PuoAoGCCqGSM49\n-----END EC PRIVATE KEY-----'
+
+describe('multi-block and other formats', () => {
+  it('finds the private key in a certificate + key bundle and after EC parameters', async () => {
+    expect((await detectKeyFormat(`${CERT}\n${EC_KEY}`))?.label).toBe('PEM EC private key (SEC1)')
+    const params = '-----BEGIN EC PARAMETERS-----\nBggqhkjOPQMBBw==\n-----END EC PARAMETERS-----'
+    expect((await detectKeyFormat(`${params}\n${EC_KEY}`))?.label).toBe('PEM EC private key (SEC1)')
+    expect((await detectKeyFormat(CERT))?.level).toBe('warn')
+  })
+
+  it('reads RFC 4716 SSH2 public keys and key sets with a private key', async () => {
+    const ssh2 = '---- BEGIN SSH2 PUBLIC KEY ----\nComment: "user"\nAAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n---- END SSH2 PUBLIC KEY ----'
+    expect((await detectKeyFormat(ssh2))?.label).toBe('SSH public key (SSH2 format)')
+    const jwks = JSON.stringify({ keys: [{ kty: 'EC', x: 'a', y: 'b' }, { kty: 'EC', x: 'a', y: 'b', d: 'c' }] })
+    expect((await detectKeyFormat(jwks))?.label).toBe('JSON Web Key (EC, private)')
+  })
+})
+
+describe('findPrivateMaterial', () => {
+  it('finds private keys pasted into public fields', async () => {
+    const xprv = 'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+    expect(await findPrivateMaterial(xprv)).toMatch(/Extended private key/)
+    expect(await findPrivateMaterial(`wpkh([73c5da0a/84h/0h/0h]${xprv}/0/*)`)).toMatch(/Extended private key/)
+    expect(await findPrivateMaterial(EC_KEY)).toBe('a private key block')
+    expect(await findPrivateMaterial('5HueCGU8rMjxEXxiPuD5BDku4MkFqeZyd4dZ1jvhTVqvbTLvyTJ')).toMatch(/WIF/)
+  })
+
+  it('does not flag public data', async () => {
+    const xpub = 'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8'
+    expect(await findPrivateMaterial(xpub)).toBeNull()
+    expect(await findPrivateMaterial('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBeNull()
+    expect(await findPrivateMaterial('3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d')).toBeNull()
+    expect(await findPrivateMaterial('73c5da0a')).toBeNull()
+  })
+})
+

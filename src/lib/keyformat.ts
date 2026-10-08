@@ -61,6 +61,9 @@ export interface Bech32Decoded {
 }
 
 /** Decodes bech32/bech32m without the 90-character limit (Cardano keys are longer). */
+/** Prefixes of keys and addresses Keyfold knows, for typo detection. */
+const BECH32_KNOWN = /^(nsec|npub|bc|tb|ltc|age|age-secret-key-)$|_x?[sv]k$|xprv|xpub|^addr|^stake/
+
 export const bech32Decode = (input: string): Bech32Decoded | null => {
   if (input !== input.toLowerCase() && input !== input.toUpperCase()) return null
   const text = input.toLowerCase()
@@ -158,7 +161,9 @@ const detectJson = (text: string): KeyFormat | null => {
     if (obj.type === 'service_account' && typeof obj.private_key === 'string') {
       return { level: 'ok', label: 'Google Cloud service account key', detail: 'JSON key file with a private key.' }
     }
-    const jwk = Array.isArray(obj.keys) ? (obj.keys[0] as Record<string, unknown> | undefined) : obj
+    // A key set counts as private if any of its keys is.
+    const set = Array.isArray(obj.keys) ? (obj.keys as Record<string, unknown>[]).filter((k) => k && typeof k === 'object') : [obj]
+    const jwk = set.find((k) => 'd' in k || 'k' in k) ?? set[0]
     if (jwk && typeof jwk.kty === 'string') {
       return 'd' in jwk || 'k' in jwk
         ? { level: 'ok', label: `JSON Web Key (${jwk.kty}, private)` }
@@ -251,7 +256,6 @@ const PUBLIC_PEM: Record<string, string> = {
   'RSA PUBLIC KEY': 'PEM RSA public key',
   CERTIFICATE: 'Certificate',
   'PGP PUBLIC KEY BLOCK': 'PGP public key block',
-  'SSH2 PUBLIC KEY': 'SSH public key (SSH2 format)',
 }
 
 const NOT_KEYS: Record<string, string> = {
@@ -260,17 +264,10 @@ const NOT_KEYS: Record<string, string> = {
   'PGP SIGNED MESSAGE': 'PGP signed message',
 }
 
-const detectPem = (text: string): KeyFormat | null => {
-  const notKey = /-----BEGIN (PGP MESSAGE|PGP SIGNATURE|PGP SIGNED MESSAGE)-----/.exec(text)
-  if (notKey) return { level: 'warn', label: NOT_KEYS[notKey[1]], detail: 'This is not a key.' }
-  const match = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/.exec(text)
-  if (!match) {
-    return /-----BEGIN [A-Z0-9 ]+-----/.test(text)
-      ? { level: 'error', label: 'Key block is incomplete', detail: 'The matching -----END ...----- line is missing.' }
-      : null
-  }
-  const [, type, body] = match
+/** One PEM block on its own. */
+const classifyPemBlock = (type: string, body: string, block: string): KeyFormat => {
   const encrypted = /Proc-Type:\s*4,ENCRYPTED/i.test(body)
+  if (NOT_KEYS[type]) return { level: 'warn', label: NOT_KEYS[type], detail: 'This is not a key.' }
   if (PUBLIC_PEM[type]) return { level: 'warn', label: PUBLIC_PEM[type], detail: PUBLIC_WARNING }
   switch (type) {
     case 'OPENSSH PRIVATE KEY': {
@@ -284,7 +281,7 @@ const detectPem = (text: string): KeyFormat | null => {
       }
     }
     case 'PGP PRIVATE KEY BLOCK': {
-      const checksum = pgpChecksumOk(match[0])
+      const checksum = pgpChecksumOk(block)
       if (checksum === false) return { level: 'error', label: 'PGP private key, but the checksum fails', detail: 'Check for a typo or missing line.' }
       return { level: 'ok', label: 'PGP private key block', detail: checksum ? 'Checksum OK.' : undefined }
     }
@@ -301,6 +298,28 @@ const detectPem = (text: string): KeyFormat | null => {
     default:
       return { level: 'info', label: `PEM block (${type.toLowerCase()})` }
   }
+}
+
+const isPrivateBlock = (type: string) => /PRIVATE KEY/.test(type)
+
+/**
+ * Reads every PEM block (a TLS bundle has a certificate and a key; openssl
+ * ecparam writes parameters then the key) and reports the most important:
+ * a private key, then an incomplete block, then public data.
+ */
+const detectPem = (text: string): KeyFormat | null => {
+  const blocks = [...text.matchAll(/-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/g)]
+  const begins = (text.match(/-----BEGIN [A-Z0-9 ]+-----/g) ?? []).length
+  const incomplete: KeyFormat = { level: 'error', label: 'Key block is incomplete', detail: 'The matching -----END ...----- line is missing.' }
+  const privateBlock = blocks.find((m) => isPrivateBlock(m[1]))
+  if (privateBlock) return classifyPemBlock(privateBlock[1], privateBlock[2], privateBlock[0])
+  // A signed PGP message has no END line of its own: it is not a key either.
+  const notKey = /-----BEGIN (PGP MESSAGE|PGP SIGNATURE|PGP SIGNED MESSAGE)-----/.exec(text)
+  if (notKey) return { level: 'warn', label: NOT_KEYS[notKey[1]], detail: 'This is not a key.' }
+  if (begins > blocks.length) return incomplete
+  if (!blocks.length) return null
+  const results = blocks.map((m) => classifyPemBlock(m[1], m[2], m[0]))
+  return results.find((r) => r.level === 'warn') ?? results[0]
 }
 
 const TOKENS: { pattern: RegExp; label: string; level?: KeyFormatLevel; detail?: string }[] = [
@@ -330,6 +349,10 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
 
   if (text.startsWith('{') || text.startsWith('[')) {
     return detectJson(text) ?? { level: 'warn', label: 'Looks like JSON, but it does not parse.' }
+  }
+
+  if (/^---- BEGIN SSH2 PUBLIC KEY ----/m.test(text)) {
+    return { level: 'warn', label: 'SSH public key (SSH2 format)', detail: PUBLIC_WARNING }
   }
 
   const pem = detectPem(text)
@@ -384,7 +407,9 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
     const data = bech.variant === 'bech32' ? fromWords(bech.words) : null
     switch (bech.hrp) {
       case 'age-secret-key-':
-        return { level: 'ok', label: 'age secret key', detail: 'Checksum OK.' }
+        return data?.length === 32
+          ? { level: 'ok', label: 'age secret key', detail: 'Checksum OK.' }
+          : { level: 'error', label: 'age secret key with unexpected length', detail: 'Check that it was copied completely.' }
       case 'age':
         return { level: 'warn', label: 'age recipient (public key)', detail: PUBLIC_WARNING }
       case 'nsec':
@@ -408,8 +433,13 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
         return { level: 'info', label: `Bech32 data (${bech.hrp})`, detail: 'Checksum OK.' }
     }
   }
-  if (/^[a-z0-9]+1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{6,}$/.test(text) && /^(nsec|npub|bc|tb)1/.test(text)) {
-    return { level: 'error', label: 'Bech32 checksum fails', detail: 'Check for a typo.' }
+  {
+    // A known Bech32 prefix whose checksum fails is a typo, not an unknown format.
+    const lower = text.toLowerCase()
+    const shape = /^([a-z0-9_-]+)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{6,}$/.exec(lower)
+    if (shape && (text === lower || text === text.toUpperCase()) && BECH32_KNOWN.test(shape[1])) {
+      return { level: 'error', label: 'Bech32 checksum fails', detail: 'Check for a typo.' }
+    }
   }
 
   if (/^[A-Za-z0-9+/]+={0,2}$/.test(text) && text.length % 4 === 0 && /[+/=]/.test(text)) {
@@ -447,11 +477,16 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
         if (payload.length === 21) return { level: 'warn', label: 'Address (Base58Check)', detail: PUBLIC_WARNING }
         return { level: 'info', label: `Base58Check, ${payload.length} bytes`, detail: 'Checksum OK.' }
       }
-      if (/^[5KLc9]/.test(text) && (text.length === 51 || text.length === 52)) {
+      const decoded = base58Decode(text)
+      // WIF for Bitcoin, Litecoin, Dogecoin, Dash and testnets: version byte + 32-byte key (+ 1) + 4-byte checksum.
+      if (decoded && (decoded.length === 37 || decoded.length === 38) && WIF_VERSIONS[decoded[0]]) {
         return { level: 'error', label: 'Looks like WIF, but the checksum fails', detail: 'Check for a typo.' }
       }
-      if (/^[xyztuvYZ](prv|pub)/.test(text) && text.length === 111) {
-        return { level: 'error', label: 'Looks like an extended key, but the checksum fails', detail: 'Check for a typo.' }
+      if (/^[xyztuvYZUV](prv|pub)/.test(text)) {
+        if (text.length === 111) return { level: 'error', label: 'Looks like an extended key, but the checksum fails', detail: 'Check for a typo.' }
+        if (text.length === 110 || text.length === 112) {
+          return { level: 'error', label: 'Looks like an extended key, but a character may be missing or extra', detail: 'Extended keys are 111 characters.' }
+        }
       }
     }
     const raw = base58Decode(text)
@@ -466,3 +501,25 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
 
   return { level: 'info', label: 'Unrecognized format', detail: 'Stored as typed.' }
 }
+
+/**
+ * Looks for private key material in text meant to be public (addresses,
+ * public keys, fingerprints): the whole text and each long token. Returns
+ * the kind of key found, or null. Hex and base64 are not counted, because
+ * 32-byte public data (Nostr pubkeys, txids, WireGuard public keys) looks the same.
+ */
+export const findPrivateMaterial = async (input: string): Promise<string | null> => {
+  const text = input.trim()
+  if (!text) return null
+  if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----/.test(text)) return 'a private key block'
+  const tokens = text
+    .split(/[\s,;()[\]]+/)
+    .map((t) => t.split('/')[0])
+    .filter((t) => t.length >= 40)
+  for (const candidate of [text, ...tokens]) {
+    const format = await detectKeyFormat(candidate)
+    if (format?.level === 'ok' && !/^(Hex|Base64)/.test(format.label)) return format.label
+  }
+  return null
+}
+
