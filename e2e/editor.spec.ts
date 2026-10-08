@@ -415,6 +415,18 @@ test('a cancelled dialog returns focus to the button that opened it', async ({ p
   await expect(del).toBeFocused()
 })
 
+test('on a 320 px phone the Add menu stays on screen', async ({ page }) => {
+  test.skip(test.info().project.name === 'desktop', 'phone layout')
+  await page.setViewportSize({ width: 320, height: 640 })
+  const { app } = await open(page)
+  await app.getByRole('button', { name: 'Add', exact: true }).click()
+  const box = (await app.locator('.popover').boundingBox())!
+  const frame = (await page.locator('#editor').boundingBox())!
+  expect(box.x).toBeGreaterThanOrEqual(frame.x)
+  expect(box.x + box.width).toBeLessThanOrEqual(frame.x + frame.width)
+  expect(box.y + box.height).toBeLessThanOrEqual(frame.y + frame.height)
+})
+
 test('demo mode when opened directly', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText(/Demo mode/)).toBeVisible()

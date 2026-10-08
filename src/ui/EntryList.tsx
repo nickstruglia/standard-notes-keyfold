@@ -10,7 +10,7 @@ export type Filter = 'all' | 'crypto' | EntryKind | 'favorites' | 'attention' | 
 
 export const FILTERS: [Filter, string][] = [
   ['all', 'All'],
-  ['crypto', 'Crypto (seeds and wallet keys)'],
+  ['crypto', 'Crypto'],
   ...KINDS.map((kind): [Filter, string] => [kind, KIND_GROUP_LABELS[kind]]),
   ['favorites', 'Favorites'],
   ['attention', 'Backup check due'],

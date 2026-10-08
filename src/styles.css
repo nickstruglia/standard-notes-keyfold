@@ -3,7 +3,8 @@
 :root {
   --bg: var(--sn-stylekit-background-color, #ffffff);
   --fg: var(--sn-stylekit-foreground-color, #1d1d20);
-  --muted: var(--sn-stylekit-neutral-color, #6c7079);
+  /* passive-color-0 is the themes' readable secondary text; neutral is often too faint. */
+  --muted: var(--sn-stylekit-passive-color-0, var(--sn-stylekit-neutral-color, #6c7079));
   --border: var(--sn-stylekit-border-color, #e0e2e6);
   --panel: var(--sn-stylekit-secondary-background-color, #f6f7f9);
   --contrast: var(--sn-stylekit-contrast-background-color, #eef0f3);
@@ -13,7 +14,11 @@
   --warning: var(--sn-stylekit-warning-color, #a96500);
   --danger: var(--sn-stylekit-danger-color, #cc1f36);
   --danger-fg: var(--sn-stylekit-danger-contrast-color, #ffffff);
-  --placeholder: var(--sn-stylekit-input-placeholder-color, #9a9ea7);
+  --placeholder: var(--sn-stylekit-input-placeholder-color, var(--muted));
+  /* Status colors are made for icons and tints; text mixes in the foreground to stay readable. */
+  --success-text: color-mix(in srgb, var(--success) 70%, var(--fg));
+  --warning-text: color-mix(in srgb, var(--warning) 55%, var(--fg));
+  --danger-text: color-mix(in srgb, var(--danger) 75%, var(--fg));
   /* Themes define no purple, so key types mix the theme's blue and red. */
   --keys: color-mix(in srgb, var(--info) 60%, var(--danger));
   --font: var(--sn-stylekit-sans-serif-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
@@ -155,9 +160,6 @@ select.input {
   cursor: pointer;
   white-space: nowrap;
 }
-.button:hover:not(:disabled) {
-  background: var(--contrast);
-}
 .button.small {
   padding: 4px 9px;
   font-size: 0.85rem;
@@ -167,17 +169,9 @@ select.input {
   border-color: var(--info);
   color: var(--info-fg);
 }
-.button.primary:hover:not(:disabled) {
-  background: var(--info);
-  filter: brightness(1.08);
-}
 .button.danger {
   color: var(--danger);
   border-color: var(--danger);
-}
-.button.danger:hover:not(:disabled) {
-  background: var(--danger);
-  color: var(--danger-fg);
 }
 .button:disabled,
 .icon-button:disabled {
@@ -199,15 +193,8 @@ select.input {
   border-radius: var(--radius);
   cursor: pointer;
 }
-.icon-button:hover:not(:disabled) {
-  color: var(--fg);
-  background: var(--contrast);
-}
 .icon-button.active {
   color: var(--warning);
-}
-.icon-button.danger:hover:not(:disabled) {
-  color: var(--danger);
 }
 
 .check {
@@ -270,13 +257,13 @@ select.input {
   align-self: center;
 }
 .status-ok {
-  color: var(--success);
+  color: var(--success-text);
 }
 .status-error {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .status-warn {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .status-info {
   color: var(--muted);
@@ -295,15 +282,15 @@ select.input {
   color: var(--muted);
 }
 .pill-ok {
-  color: var(--success);
+  color: var(--success-text);
   background: color-mix(in srgb, var(--success) 13%, transparent);
 }
 .pill-error {
-  color: var(--danger);
+  color: var(--danger-text);
   background: color-mix(in srgb, var(--danger) 13%, transparent);
 }
 .pill-warn {
-  color: var(--warning);
+  color: color-mix(in srgb, var(--warning) 45%, var(--fg));
   background: color-mix(in srgb, var(--warning) 15%, transparent);
 }
 
@@ -411,6 +398,9 @@ select.input {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+  /* Short screens: scroll inside the panel rather than past the frame. */
+  max-height: 70vh;
+  overflow-y: auto;
 }
 .popover-dialog {
   width: 270px;
@@ -443,7 +433,6 @@ select.input {
   border-radius: var(--radius);
   cursor: pointer;
 }
-.menu-item:hover,
 .menu-item:focus-visible {
   background: var(--contrast);
 }
@@ -492,9 +481,6 @@ select.input {
   text-transform: inherit;
   letter-spacing: inherit;
 }
-.group-toggle:hover {
-  color: var(--fg);
-}
 .count {
   padding: 0 6px;
   font-size: 0.72rem;
@@ -534,12 +520,10 @@ select.input {
   border-radius: var(--radius);
   cursor: pointer;
 }
-.entry-item:hover {
-  background: var(--contrast);
-}
 .entry-item.selected {
-  background: var(--bg);
+  background: color-mix(in srgb, var(--info) 10%, var(--bg));
   border-color: var(--border);
+  box-shadow: inset 3px 0 0 var(--info);
 }
 .entry-icon {
   display: inline-flex;
@@ -659,9 +643,6 @@ select.input {
   margin-top: 7px;
   color: var(--muted);
 }
-.card-toggle:hover {
-  background: var(--panel);
-}
 .card-toggle:focus-visible,
 .group-toggle:focus-visible,
 .section-toggle:focus-visible {
@@ -706,7 +687,6 @@ select.input {
   font-weight: 600;
   border-color: transparent;
 }
-.title-input:hover,
 .title-input:focus {
   border-color: var(--border);
 }
@@ -1005,15 +985,25 @@ select.input {
   gap: 8px;
 }
 .app.compact .entry-title {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  max-width: 60%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .app.compact .entry-meta {
   flex: 0 10 auto;
   min-width: 0;
 }
 .app.compact .entry-pills {
-  flex: none;
+  flex: 0 1 auto;
   flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+.app.compact .sidebar .entry-date {
+  display: none;
 }
 .app.compact .entry-pills .pill:not(.pill-error):not(.pill-warn) {
   display: none;
@@ -1128,6 +1118,94 @@ select.input {
   }
   .word-grid {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+}
+
+/* Small screens: menus span the toolbar instead of hanging off the left edge. */
+@media (max-width: 560px) {
+  .toolbar-row {
+    position: relative;
+  }
+  .popover-wrap {
+    position: static;
+  }
+  .popover {
+    left: 0;
+    right: 0;
+    min-width: 0;
+  }
+  .popover-dialog {
+    width: auto;
+  }
+}
+
+/* Phones (and short windows): the open card's header scrolls with the card,
+   so it cannot cover the field being typed in above the keyboard. */
+@media (max-width: 760px), (max-height: 560px) {
+  .card-entry.open .card-header {
+    position: static;
+  }
+}
+
+/* Touch screens: targets of at least 40 px. */
+@media (pointer: coarse) {
+  .button,
+  .toolbar .button {
+    min-height: 40px;
+  }
+  .toolbar .button {
+    min-width: 36px;
+  }
+  .group-toggle,
+  .section-toggle {
+    min-height: 40px;
+  }
+  .menu-item {
+    min-height: 44px;
+  }
+  .check {
+    min-height: 40px;
+    align-items: center;
+  }
+  .check input {
+    width: 20px;
+    height: 20px;
+  }
+}
+/* Hover styles only where a pointer can hover: phones keep :hover on the last tapped element. */
+@media (hover: hover) {
+  .button:hover:not(:disabled) {
+    background: var(--contrast);
+  }
+  .button.primary:hover:not(:disabled) {
+    background: var(--info);
+    filter: brightness(1.08);
+  }
+  .button.danger:hover:not(:disabled) {
+    background: var(--danger);
+    color: var(--danger-fg);
+  }
+  .icon-button:hover:not(:disabled) {
+    color: var(--fg);
+    background: var(--contrast);
+  }
+  .icon-button.danger:hover:not(:disabled) {
+    color: var(--danger);
+  }
+  .group-toggle:hover {
+    color: var(--fg);
+  }
+  .entry-item:hover {
+    background: var(--contrast);
+  }
+  .card-toggle:hover {
+    background: var(--panel);
+  }
+  .menu-item:hover {
+    background: var(--contrast);
+  }
+  .title-input:hover {
+    border-color: var(--border);
   }
 }
 

@@ -78,6 +78,8 @@ const themeUrls = async () => {
   if (mobile) {
     darkThemeData ??= fetch(darkThemeUrl)
       .then((response) => response.text())
+      // Inside the null-origin wrapper the fetch is blocked by CORS: use a copy.
+      .catch(() => ':root { --sn-stylekit-background-color: #15161a; --sn-stylekit-foreground-color: #e6e6e6; }')
       .then((css) => `data:text/css;base64,${btoa(css)}`)
     return [await darkThemeData]
   }
