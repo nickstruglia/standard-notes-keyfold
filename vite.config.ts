@@ -6,11 +6,12 @@ import pkg from './package.json' with { type: 'json' }
 const siteUrl = (process.env.SITE_URL || 'https://nickstruglia.github.io/sn-keyfold/').replace(/\/*$/, '/')
 
 // No network access at all: scripts only from our own origin, nothing can
-// connect out. Styles stay open so Standard Notes themes can load.
+// connect out. Styles stay open so Standard Notes themes can load: from the
+// web app (https:), the desktop app (localhost) and the mobile apps (data:).
 const CSP = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'self' 'unsafe-inline' https: http://localhost:* http://127.0.0.1:* file:",
+  "style-src 'self' 'unsafe-inline' https: data: http://localhost:* http://127.0.0.1:*",
   "img-src 'self' data:",
   "font-src 'self' data:",
   "connect-src 'none'",

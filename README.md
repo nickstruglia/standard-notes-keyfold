@@ -71,7 +71,7 @@ Open the URL above without `ext.json` to try a demo in your browser (sample data
 
 The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so Keyfold needs an internet connection on a phone (the desktop app can keep an offline copy). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
 
-The phone apps pass Standard Notes' built-in themes to plugins as local files, which a plugin loaded from the web is not allowed to open, so Keyfold loads the same theme from Standard Notes' web app (`app.standardnotes.com`) instead.
+The phone apps send Standard Notes' built-in themes to plugins as embedded stylesheets (`data:` URLs), which Keyfold accepts. Until those are ready they send a link to the app's local theme file, which a plugin loaded from the web cannot open, so Keyfold loads the same theme from Standard Notes' web app (`app.standardnotes.com`) instead.
 
 Tested in the Standard Notes Android app. Not yet verified on an iPhone (Safari's engine, WebKit). Try it with a dummy phrase first.
 
@@ -117,7 +117,7 @@ npm run build
 npm run test:e2e   # Playwright tests against the production build, on desktop and phone screen sizes
 ```
 
-`dev/host.html` is a mock of the Standard Notes side of the plugin protocol (`dev/null-origin.html` wraps it so the app's origin is "null", as in the mobile apps). It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device. Add `?mobile=1` to register the way the Android app does, with its `file://` theme URLs.
+`dev/host.html` is a mock of the Standard Notes side of the plugin protocol (`dev/null-origin.html` wraps it so the app's origin is "null", as in the mobile apps). It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device. Add `?mobile=1` to register the way the phone apps do, with themes as `data:` URLs (`?mobile=file` for their `file://` fallback).
 
 ## Deploy your own copy
 

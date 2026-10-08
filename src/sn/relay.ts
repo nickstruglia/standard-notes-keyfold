@@ -44,12 +44,13 @@ export const replyTarget = (origin: string | undefined): string =>
 const HOSTED_THEMES = 'https://app.standardnotes.com/components/assets/'
 
 /**
- * Where to load a theme stylesheet from. The mobile apps pass their built-in
- * themes as file:// URLs, which a page served over HTTPS may not load, so
- * those load from the copies Standard Notes serves for its web app.
+ * Where to load a theme stylesheet from. The mobile apps send their built-in
+ * themes as data: URLs, or as file:// URLs until those are ready. A page
+ * served over HTTPS may not load file:// URLs, so those load from the copies
+ * Standard Notes serves for its web app.
  */
 export const themeUrl = (url: string): string | undefined => {
-  if (/^https?:\/\//i.test(url)) return url
+  if (/^https?:\/\//i.test(url) || /^data:text\/css[;,]/i.test(url)) return url
   const builtIn = /\/components\/assets\/([a-z0-9][a-z0-9.-]*)\/([\w.-]+(?:\/[\w.-]+)*\.css)$/i.exec(url)
   if (!builtIn || builtIn[0].includes('..')) return undefined
   return `${HOSTED_THEMES}${builtIn[1]}/${builtIn[2]}`

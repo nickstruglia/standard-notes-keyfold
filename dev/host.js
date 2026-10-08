@@ -65,17 +65,27 @@ window.addEventListener('message', (event) => {
   }
 })
 
-// ?mobile=1 registers the way the Android app does, which passes its built-in
-// themes as file:// URLs.
-const mobile = params.get('mobile') === '1'
+// ?mobile=1 registers the way the Android and iOS apps do. They send their
+// built-in themes as data: URLs (ComponentManager.fetchNativeThemesOnMobile),
+// or, with ?mobile=file, as the file:// URLs they fall back to.
+const mobile = params.get('mobile')
+const darkThemeUrl = new URL('./dark-theme.css', location.href).href
+let darkThemeData
 
-const themeUrls = () => {
+const themeUrls = async () => {
   if (!state.theme) return []
-  if (mobile) return ['file:///android_asset/Web.bundle/src/web-src/components/assets/org.standardnotes.theme-focus/index.css']
-  return [new URL('./dark-theme.css', location.href).href]
+  if (mobile === 'file') return ['file:///android_asset/Web.bundle/src/web-src/components/assets/org.standardnotes.theme-focus/index.css']
+  if (mobile) {
+    darkThemeData ??= fetch(darkThemeUrl)
+      .then((response) => response.text())
+      .then((css) => `data:text/css;base64,${btoa(css)}`)
+    return [await darkThemeData]
+  }
+  return [darkThemeUrl]
 }
 
-const register = () => {
+const register = async () => {
+  const themes = await themeUrls()
   send({
     action: 'component-registered',
     sessionKey,
@@ -84,11 +94,11 @@ const register = () => {
       uuid: 'component-1',
       environment: mobile ? 'native-mobile-web' : 'web',
       platform: mobile ? 'android' : 'linux',
-      activeThemeUrls: themeUrls(),
+      activeThemeUrls: themes,
     },
   })
   // Standard Notes follows registration with the same themes again.
-  send({ action: 'themes', data: { themes: themeUrls() } })
+  send({ action: 'themes', data: { themes } })
 }
 
 // The same sandbox Standard Notes gives third-party plugins (IframeFeatureView.tsx):
@@ -109,9 +119,9 @@ document.getElementById('toggle-lock').onclick = () => {
   appData.locked = !appData.locked
   streamNote(true)
 }
-document.getElementById('toggle-theme').onclick = () => {
+document.getElementById('toggle-theme').onclick = async () => {
   state.theme = !state.theme
-  send({ action: 'themes', data: { themes: themeUrls() } })
+  send({ action: 'themes', data: { themes: await themeUrls() } })
 }
 document.getElementById('remote-edit').onclick = () => {
   const text = state.note.content.text

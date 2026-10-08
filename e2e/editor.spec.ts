@@ -208,19 +208,33 @@ test('applies Standard Notes themes', async ({ page }) => {
   expect(errors).toEqual([])
 })
 
-test('applies the built-in themes the mobile apps pass as file:// URLs', async ({ page }) => {
-  // The mobile apps' theme files cannot load in a page served over HTTPS, so
-  // Keyfold loads the copies Standard Notes serves for its web app.
-  const requested: string[] = []
-  await page.route('https://app.standardnotes.com/components/assets/**', (route) => {
-    requested.push(route.request().url())
-    return route.fulfill({ path: 'dev/dark-theme.css', contentType: 'text/css' })
-  })
+test('applies the built-in themes the mobile apps send as data: URLs', async ({ page }) => {
   const { app, errors } = await open(page, '', { mobile: '1', theme: 'dark' })
   await expect(app.getByText('No keys yet.')).toBeVisible()
   await expect.poll(() => background(app)).toBe('rgb(21, 22, 26)')
   await expect(app.locator('html')).toHaveCSS('color-scheme', 'dark')
   await expect(app.locator('html')).not.toHaveClass(/theme-pending/)
+  // Switching themes off and on again works too.
+  await page.getByRole('button', { name: 'Toggle dark theme' }).click()
+  await expect.poll(() => background(app)).toBe('rgb(255, 255, 255)')
+  await page.getByRole('button', { name: 'Toggle dark theme' }).click()
+  await expect.poll(() => background(app)).toBe('rgb(21, 22, 26)')
+  expect(errors).toEqual([])
+})
+
+test('applies built-in themes the mobile apps send as file:// URLs', async ({ page }) => {
+  // The mobile apps fall back to file:// URLs before their data: copies are
+  // ready. A page served over HTTPS cannot load those, so Keyfold loads the
+  // copies Standard Notes serves for its web app.
+  const requested: string[] = []
+  await page.route('https://app.standardnotes.com/components/assets/**', (route) => {
+    requested.push(route.request().url())
+    return route.fulfill({ path: 'dev/dark-theme.css', contentType: 'text/css' })
+  })
+  const { app, errors } = await open(page, '', { mobile: 'file', theme: 'dark' })
+  await expect(app.getByText('No keys yet.')).toBeVisible()
+  await expect.poll(() => background(app)).toBe('rgb(21, 22, 26)')
+  await expect(app.locator('html')).toHaveCSS('color-scheme', 'dark')
   expect(requested).toEqual(['https://app.standardnotes.com/components/assets/org.standardnotes.theme-focus/index.css'])
   expect(errors).toEqual([])
 })

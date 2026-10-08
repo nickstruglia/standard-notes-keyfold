@@ -76,10 +76,16 @@ describe('themeUrl', () => {
     ).toBe('https://app.standardnotes.com/components/assets/com.standardnotes.theme-proton/index.css')
   })
 
+  it('loads the data: stylesheets the mobile apps send', () => {
+    const data = 'data:text/css;base64,OnJvb3R7fQ=='
+    expect(themeUrl(data)).toBe(data)
+  })
+
   it('ignores URLs it cannot load', () => {
     expect(themeUrl('file:///android_asset/web-src/components/assets/../../secrets/index.css')).toBeUndefined()
     expect(themeUrl('file:///android_asset/web-src/components/assets/org.standardnotes.theme-focus/index.js')).toBeUndefined()
     expect(themeUrl('javascript:alert(1)')).toBeUndefined()
+    expect(themeUrl('data:text/html;base64,PHNjcmlwdD4=')).toBeUndefined()
     expect(themeUrl('theme.css')).toBeUndefined()
   })
 })

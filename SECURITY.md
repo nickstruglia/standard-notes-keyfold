@@ -34,7 +34,7 @@ through `postMessage`.
 ## Design choices
 
 - Built to run in Standard Notes' plugin sandbox (`allow-scripts`, no `allow-same-origin`): no browser storage, and the build is a classic script so it loads without CORS headers.
-- Theme stylesheets load from the URLs Standard Notes sends. The mobile apps send their built-in themes as `file://` URLs, which an HTTPS page cannot load, so those load from the same files on `app.standardnotes.com`.
+- Theme stylesheets load from the URLs Standard Notes sends: `https:`, the desktop app's local server, or `data:` URLs, which the mobile apps use for built-in themes. When a mobile app sends a `file://` URL instead, which an HTTPS page cannot load, the same file loads from `app.standardnotes.com`.
 - The deploy workflow gives its build job read-only permissions and installs dependencies without install scripts; only the deploy job can publish.
 - Key-derivation settings read from a note are bounded, and a vault saved with fewer iterations than the current default is re-encrypted at the default after unlock.
 - One runtime dependency: `preact`. The Standard Notes plugin protocol (`src/sn/relay.ts`) is implemented locally: it accepts messages only from the parent window, and replies to the app's exact origin when it has a web origin. Validators (BIP39, Base58Check, Bech32, CRC-24) are small local implementations, tested against the audited `@scure` libraries and real keys.
