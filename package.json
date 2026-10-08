@@ -24,7 +24,7 @@
     "main": "index.html"
   },
   "dependencies": {
-    "preact": "10.29.8"
+    "preact": "11.0.0"
   },
   "devDependencies": {
     "@noble/hashes": "2.4.0",
