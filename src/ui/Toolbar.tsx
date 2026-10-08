@@ -71,7 +71,6 @@ export const Toolbar = (p: Props) => {
                   {KINDS.filter((kind) => KIND_INFO[kind].group === group).map((kind) => (
                     <button
                       type="button"
-                      role="menuitem"
                       class="menu-item"
                       onClick={() => {
                         close()

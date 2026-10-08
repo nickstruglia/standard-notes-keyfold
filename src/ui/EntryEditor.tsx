@@ -218,8 +218,10 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
   const counts = [...new Set([...scheme.counts, ...COMMON_WORD_COUNTS])].sort((a, b) => a - b)
   const filled = entry.words.filter(Boolean).length
 
-  const setCount = async (count: number) => {
-    if (!Number.isInteger(count) || count < 1 || count > MAX_WORDS || count === entry.words.length) return
+  const [customMode, setCustomMode] = useState(false)
+  /** Returns false when the count was not changed. */
+  const setCount = async (count: number): Promise<boolean> => {
+    if (!Number.isInteger(count) || count < 1 || count > MAX_WORDS || count === entry.words.length) return false
     const dropped = entry.words.slice(count).filter(Boolean).length
     if (
       dropped > 0 &&
@@ -230,9 +232,10 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
         danger: true,
       }))
     ) {
-      return
+      return false
     }
     update({ words: Array.from({ length: count }, (_, i) => entry.words[i] ?? '') })
+    return true
   }
 
   const setScheme = (id: MnemonicScheme) => {
@@ -262,11 +265,18 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
         <Field label="Words">
           <select
             class="input"
-            value={counts.includes(entry.words.length) ? String(entry.words.length) : 'custom'}
+            value={customMode || !counts.includes(entry.words.length) ? 'custom' : String(entry.words.length)}
             disabled={readOnly}
-            onChange={(e) => {
-              const v = e.currentTarget.value
-              if (v !== 'custom') setCount(Number(v))
+            onChange={async (e) => {
+              const select = e.currentTarget
+              const v = select.value
+              if (v === 'custom') {
+                setCustomMode(true)
+                return
+              }
+              setCustomMode(false)
+              // Cancelled "Remove words?": put the select back on the current count.
+              if (!(await setCount(Number(v)))) select.value = counts.includes(entry.words.length) ? String(entry.words.length) : 'custom'
             }}
           >
             {counts.map((n) => (
@@ -278,7 +288,7 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
             <option value="custom">Custom…</option>
           </select>
         </Field>
-        {!counts.includes(entry.words.length) && (
+        {(customMode || !counts.includes(entry.words.length)) && (
           <Field label="Custom count">
             <input
               class="input"
@@ -697,24 +707,38 @@ const NotesSection = ({ entry, update }: SectionArgs) => {
   )
 }
 
+/** Comma-separated tags, without duplicates that differ only in case (the first spelling wins). */
+const parseTags = (text: string): string[] => {
+  const seen = new Set<string>()
+  return text
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t && !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()))
+}
+
 const TagsInput = ({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) => {
   const { readOnly } = useUi()
   const [text, setText] = useState(tags.join(', '))
-  useEffect(() => setText(tags.join(', ')), [tags.join(',')])
-  const commit = () => {
-    const next = [...new Set(text.split(',').map((t) => t.trim()).filter(Boolean))]
+  // Follow changes from elsewhere, but not while the text already means the same tags ("prod, ").
+  useEffect(() => {
+    if (parseTags(text).join(',') !== tags.join(',')) setText(tags.join(', '))
+  }, [tags.join(',')])
+  // Saved as you type, so nothing is lost if the vault locks before you leave the field.
+  const onInput = (value: string) => {
+    setText(value)
+    const next = parseTags(value)
     if (next.join(',') !== tags.join(',')) onChange(next)
-    setText(next.join(', '))
   }
+  const tidy = () => setText(parseTags(text).join(', '))
   return (
     <input
       class="input"
       value={text}
       placeholder="cold storage, inheritance"
       readOnly={readOnly}
-      onInput={(e) => setText(e.currentTarget.value)}
-      onBlur={commit}
-      onKeyDown={(e) => e.key === 'Enter' && commit()}
+      onInput={(e) => onInput(e.currentTarget.value)}
+      onBlur={tidy}
+      onKeyDown={(e) => e.key === 'Enter' && tidy()}
     />
   )
 }

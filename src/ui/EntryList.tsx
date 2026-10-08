@@ -235,10 +235,20 @@ interface GroupProps {
   children: ComponentChildren
 }
 
-/** A collapsible group heading. Ungrouped lists render their children directly. */
+/**
+ * A collapsible group. Always the same elements, with or without a heading,
+ * so cards are not remounted (losing focus and typing) when the number of
+ * groups changes between one and two.
+ */
 export const Group = ({ group, bare, collapsed, onToggle, children }: GroupProps) => {
-  if (!group.label || bare) return <>{children}</>
   const bodyId = `group-${group.key.replace(/[^a-z0-9]/gi, '-')}`
+  if (!group.label || bare) {
+    return (
+      <section class="group bare">
+        <div id={bodyId}>{children}</div>
+      </section>
+    )
+  }
   return (
     <section class={`group ${collapsed ? 'collapsed' : ''}`}>
       <h2 class="group-heading">

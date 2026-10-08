@@ -150,11 +150,13 @@ export const App = ({ host }: { host: Host }) => {
   }
 
   /** Applies a local change and queues a save. */
-  const update = useCallback((change: (v: VaultData) => VaultData) => {
-    if (readOnlyRef.current) return
+  /** Returns false when nothing was changed (the note is read-only). */
+  const update = useCallback((change: (v: VaultData) => VaultData): boolean => {
+    if (readOnlyRef.current) return false
     const next = change(vaultRef.current)
     showVault(next)
     saver.schedule(() => serialize(next))
+    return true
   }, [saver])
 
   // Incoming note content from Standard Notes (first load, other devices, history restores).
@@ -536,6 +538,8 @@ export const App = ({ host }: { host: Host }) => {
       ...(JSON.parse(JSON.stringify(source)) as Entry),
       id: newId(),
       label: source.label ? `${source.label} (copy)` : '',
+      // A copy of an archived entry would be hidden right away.
+      archived: false,
       addedAt: now,
       updatedAt: now,
     }
@@ -553,22 +557,29 @@ export const App = ({ host }: { host: Host }) => {
       confirmLabel: 'Delete',
       danger: true,
     })
-    if (!ok) return
-    update((v) => ({ ...v, entries: v.entries.filter((e) => e.id !== id) }))
+    // The note may have become read-only, or the entry gone, while the dialog was open.
+    if (!ok || !vaultRef.current.entries.some((e) => e.id === id)) return
+    if (!update((v) => ({ ...v, entries: v.entries.filter((e) => e.id !== id) }))) {
+      toast('Nothing was deleted: the note is read-only right now.', 'error')
+      return
+    }
     setView({ type: 'list' })
     setExpanded((open) => {
       const next = new Set(open)
       next.delete(id)
       return next
     })
-    toast('Entry deleted.', 'info', {
+    toast(`Deleted "${entry.label || 'Untitled'}".`, 'info', {
       label: 'Undo',
-      run: () =>
+      run: () => {
+        // Already back (another device, history restore) or read-only: do not add a second copy.
+        if (vaultRef.current.entries.some((e) => e.id === entry.id)) return
         update((v) => {
           const entries = [...v.entries]
           entries.splice(Math.min(index, entries.length), 0, entry)
           return { ...v, entries }
-        }),
+        })
+      },
     }, 10000)
   }
 
@@ -604,7 +615,8 @@ export const App = ({ host }: { host: Host }) => {
   // "last updated" (and may change a chain or tag), and moving the card under
   // the cursor would drop focus mid-word. The order refreshes once it closes.
   const editing = viewPrefs.layout === 'stacked' ? expanded.size > 0 : selected !== null
-  const layoutKey = [viewPrefs.layout, viewPrefs.sort, viewPrefs.groupBy, filter, query].join('|')
+  // In the list-beside-editor layout, choosing another entry refreshes the list.
+  const layoutKey = [viewPrefs.layout, viewPrefs.sort, viewPrefs.groupBy, filter, query, viewPrefs.layout === 'stacked' ? '' : selected?.id].join('|')
   const layoutRef = useRef<{ key: string; snapshot: LayoutSnapshot } | null>(null)
   const previous = editing && layoutRef.current?.key === layoutKey ? layoutRef.current.snapshot : null
   let entries = visibleEntries(vault.entries, filter, viewPrefs.sort, query, settings.backupReminderMonths)
@@ -761,7 +773,10 @@ export const App = ({ host }: { host: Host }) => {
                     collapsedGroups={collapsedGroups}
                     selectedId={selected?.id ?? null}
                     reminderMonths={settings.backupReminderMonths}
-                    onSelect={(id) => setView({ type: 'entry', id })}
+                    onSelect={(id) => {
+                      setNewEntryId(null)
+                      setView({ type: 'entry', id })
+                    }}
                     onToggleGroup={toggleGroup}
                   />
                 )}
@@ -773,7 +788,10 @@ export const App = ({ host }: { host: Host }) => {
                     entry={selected}
                     reminderMonths={settings.backupReminderMonths}
                     focusLabel={selected.id === newEntryId}
-                    onBack={() => setView({ type: 'list' })}
+                    onBack={() => {
+                      setNewEntryId(null)
+                      setView({ type: 'list' })
+                    }}
                     {...handlersFor(selected.id)}
                   />
                 ) : (

@@ -123,14 +123,20 @@ export interface DialogState {
 }
 
 export const ConfirmDialog = ({ dialog, onClose }: { dialog: DialogState; onClose: (ok: boolean) => void }) => {
+  // Recorded during the first render, before Cancel takes focus.
+  const [opener] = useState(() => document.activeElement as HTMLElement | null)
   const cancelRef = useFocusOnMount<HTMLButtonElement>()
-  // Return focus to whatever opened the dialog.
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    return () => opener?.focus?.()
+  // Return focus to whatever opened the dialog, if it is still there.
+  useEffect(() => () => {
+    if (opener?.isConnected) opener.focus()
   }, [])
+  // Escape works even after a click on the dialog text moved focus out of the buttons.
+  useEffect(() => {
+    const onEscape = (e: KeyboardEvent) => e.key === 'Escape' && onClose(false)
+    document.addEventListener('keydown', onEscape)
+    return () => document.removeEventListener('keydown', onEscape)
+  }, [onClose])
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose(false)
     if (e.key !== 'Tab') return
     // Keep keyboard focus inside the dialog.
     const buttons = Array.from((e.currentTarget as HTMLElement).querySelectorAll('button'))

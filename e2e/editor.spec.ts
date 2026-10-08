@@ -30,7 +30,7 @@ type App = ReturnType<Page['frameLocator']>
 /** Adds an entry through the toolbar's Add menu. */
 const add = async (app: App, kind: string) => {
   await app.getByRole('button', { name: 'Add' }).click()
-  await app.getByRole('menuitem', { name: kind }).click()
+  await app.locator('.popover').getByRole('button', { name: kind, exact: true }).click()
 }
 
 const vaultText = (entries: object[], settings: object = {}) =>
@@ -382,6 +382,39 @@ test('warns about a private key in public info and tidies pasted fingerprints an
   await expect(app.getByLabel('Derivation path')).toHaveValue("m/84'/0'/0'")
 })
 
+test('undo never duplicates an entry, and the toast names it', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0], SEEDS[1]]))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Delete', exact: true }).first().click()
+  await app.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click()
+  await expect(app.getByText('Deleted "Cold storage".')).toBeVisible()
+  // The entry comes back from elsewhere (e.g. history restore) before Undo.
+  await page.evaluate((text) => (window as any).mockHost.restore(text), vaultText([SEEDS[0], SEEDS[1]]))
+  await app.getByRole('button', { name: 'Undo' }).click()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries.filter((e: any) => e.id === 'a').length ?? 1).toBe(1)
+})
+
+test('Escape closes the Add panel and returns focus to its button', async ({ page }) => {
+  const { app } = await open(page)
+  const addButton = app.getByRole('button', { name: 'Add', exact: true })
+  await addButton.click()
+  await app.locator('.popover').getByRole('button', { name: 'SSH key', exact: true }).focus()
+  await page.keyboard.press('Escape')
+  await expect(app.locator('.popover')).toHaveCount(0)
+  await expect(addButton).toBeFocused()
+})
+
+test('a cancelled dialog returns focus to the button that opened it', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  const del = app.getByRole('button', { name: 'Delete', exact: true }).first()
+  await del.click()
+  await app.getByRole('alertdialog').getByText(/will be removed/).click()
+  await page.keyboard.press('Escape')
+  await expect(app.getByRole('alertdialog')).toHaveCount(0)
+  await expect(del).toBeFocused()
+})
+
 test('demo mode when opened directly', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText(/Demo mode/)).toBeVisible()
@@ -591,7 +624,7 @@ test('stores an SSH key and an expiring API token alongside crypto entries', asy
   await app.getByRole('button', { name: 'Add' }).click()
   const groups = await app.getByRole('group').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
   expect(groups).toEqual(['Crypto', 'Keys', 'Secrets'])
-  await app.getByRole('menuitem', { name: 'SSH key' }).click()
+  await app.locator('.popover').getByRole('button', { name: 'SSH key', exact: true }).click()
   await app.getByLabel('Label').fill('Deploy key')
   await app.getByLabel('Hosts / service').fill('github.com')
   await app.getByRole('button', { name: /Private key \(hidden\)/ }).click()

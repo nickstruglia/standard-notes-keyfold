@@ -11,32 +11,55 @@ interface Props {
   children: (close: () => void) => ComponentChildren
 }
 
-/** A button that opens a small floating panel; closes on outside click or Escape. */
+/**
+ * A button that opens a small floating panel (a disclosure, not an ARIA
+ * menu: its items are ordinary buttons reached with Tab). Closes on an
+ * outside click, when focus leaves it, or with Escape, which returns focus
+ * to the button.
+ */
 export const Popover = ({ label, icon, kind, buttonClass = 'button small', children }: Props) => {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!open) return
     const onPointer = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
     document.addEventListener('pointerdown', onPointer)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointer)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('pointerdown', onPointer)
   }, [open])
 
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || !open) return
+    e.stopPropagation()
+    setOpen(false)
+    buttonRef.current?.focus()
+  }
+
+  // Tabbing out closes it. relatedTarget is null for ordinary clicks in some
+  // browsers; those are handled by the pointerdown listener.
+  const onFocusOut = (e: FocusEvent) => {
+    const next = e.relatedTarget as Node | null
+    if (next && !ref.current?.contains(next)) setOpen(false)
+  }
+
   return (
-    <div class="popover-wrap" ref={ref}>
-      <button type="button" class={buttonClass} aria-haspopup={kind} aria-expanded={open} aria-label={label} title={label} onClick={() => setOpen(!open)}>
+    <div class="popover-wrap" ref={ref} onKeyDown={onKeyDown} onFocusOut={onFocusOut}>
+      <button
+        type="button"
+        ref={buttonRef}
+        class={buttonClass}
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        onClick={() => setOpen(!open)}
+      >
         <Icon name={icon} /> <span class="button-text">{label}</span>
       </button>
       {open && (
-        <div class={`popover popover-${kind}`} role={kind} aria-label={label}>
+        <div class={`popover popover-${kind}`}>
           {children(() => setOpen(false))}
         </div>
       )}
