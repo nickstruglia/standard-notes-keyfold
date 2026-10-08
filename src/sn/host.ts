@@ -14,6 +14,8 @@ export interface HostNote {
 
 export interface Host {
   mode: 'standardnotes' | 'demo' | 'viewer'
+  /** The Standard Notes phone apps, whose web views may not save downloaded files. */
+  inMobileApp(): boolean
   subscribe(listener: (note: HostNote) => void): void
   save(text: string, preview: string): void
 }
@@ -38,6 +40,7 @@ export const createStandardNotesHost = (): Host => {
 
   return {
     mode: 'standardnotes',
+    inMobileApp: () => relay.inMobileApp,
     subscribe(listener) {
       relay.streamContextItem((item: RelayItem) => {
         current = item
@@ -63,6 +66,7 @@ export const createDemoHost = (initialText: string): Host => {
   let text = initialText
   return {
     mode: 'demo',
+    inMobileApp: () => false,
     subscribe(listener) {
       queueMicrotask(() => listener({ text, locked: false, metadataOnly: false }))
     },
@@ -75,6 +79,7 @@ export const createDemoHost = (initialText: string): Host => {
 /** Opens a note's text read-only, outside Standard Notes (for recovery). Nothing is saved. */
 export const createViewerHost = (noteText: string): Host => ({
   mode: 'viewer',
+  inMobileApp: () => false,
   subscribe(listener) {
     queueMicrotask(() => listener({ text: noteText, locked: true, metadataOnly: false }))
   },

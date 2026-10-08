@@ -469,6 +469,7 @@ test('the recovery viewer opens an encrypted note read-only, also from the unzip
   test.skip(test.info().project.name !== 'desktop', 'one engine check is enough')
   for (const url of ['/#open', `file://${process.cwd()}/dist/index.html#open`]) {
     await page.goto(url)
+    await page.getByText("Paste a note's text instead").click()
     await page.getByLabel('Note text').fill(ENCRYPTED_NOTE)
     await page.getByRole('button', { name: 'Open read-only' }).click()
     await page.getByLabel('Vault password').fill(KAT_PASSWORD)
@@ -478,6 +479,204 @@ test('the recovery viewer opens an encrypted note read-only, also from the unzip
     await page.getByRole('button', { name: /Known answer/ }).click()
     await expect(page.getByLabel('Word 1', { exact: true })).toHaveAttribute('readonly', '')
   }
+})
+
+const BACKUP_PASSWORD = 'river candle orbit plain seven'
+/** The known-answer vault as a backup file (the format adds exportedAt). */
+const KAT_BACKUP = JSON.stringify({ ...JSON.parse(ENCRYPTED_NOTE), exportedAt: '2026-01-02T03:04:05.000Z' })
+
+/** Makes a backup file in Settings, saves it, and returns its name, path and text. */
+const exportBackup = async (page: Page, app: App, password = BACKUP_PASSWORD) => {
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await app.getByRole('button', { name: 'Make a backup file' }).click()
+  await app.getByLabel('Backup password', { exact: true }).fill(password)
+  await app.getByLabel('Repeat backup password').fill(password)
+  await app.getByRole('checkbox', { name: /I understand/ }).check()
+  await app.getByRole('button', { name: 'Encrypt backup' }).click()
+  const save = app.getByRole('link', { name: 'Save file' })
+  // Focused, so a phone scrolls it into view.
+  await expect(save).toBeFocused()
+  const [download] = await Promise.all([page.waitForEvent('download'), save.click()])
+  const path = test.info().outputPath(download.suggestedFilename())
+  await download.saveAs(path)
+  return { name: download.suggestedFilename(), path, text: readFileSync(path, 'utf8') }
+}
+
+test('saves an encrypted backup file that the offline viewer opens from disk', async ({ page }) => {
+  const { app, errors } = await open(page, vaultText(SEEDS))
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await expect(app.getByText('No backup file made yet.')).toBeVisible()
+  const viewerLink = app.getByRole('link', { name: 'Get the offline viewer' })
+  await expect(viewerLink).toHaveAttribute('href', /\/keyfold-viewer\.html$/)
+  await expect(viewerLink).toHaveAttribute('target', '_blank')
+  await app.getByRole('button', { name: 'Close settings' }).click()
+
+  const backup = await exportBackup(page, app)
+  expect(backup.name).toMatch(/^keyfold-backup-\d{4}-\d{2}-\d{2}\.json$/)
+  await expect(app.getByText(/Encrypted 3 entries into keyfold-backup-/)).toBeVisible()
+  // Nothing in the file is readable without its password.
+  for (const s of SEEDS) {
+    expect(backup.text).not.toContain(s.label)
+    expect(backup.text).not.toContain(s.words.slice(0, 3).join('", "'))
+  }
+  expect(JSON.parse(backup.text).encryption.cipher).toBe('AES-256-GCM')
+  // Saving it is recorded in the vault.
+  await expect(app.getByText(/^Last backup file: /)).toBeVisible()
+  await expect.poll(async () => (await noteJson(page))?.vault?.settings?.lastExportedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  await app.getByRole('button', { name: 'Done' }).click()
+  await expect(app.getByRole('link', { name: 'Save file' })).toHaveCount(0)
+
+  // The single-file viewer, as kept on a flash drive.
+  await page.goto(`file://${process.cwd()}/dist/keyfold-viewer.html`)
+  await expect(page.getByRole('heading', { name: 'Keyfold offline viewer' })).toBeVisible()
+  await page.getByLabel('Backup file').setInputFiles(backup.path)
+  await expect(page.getByRole('heading', { name: 'Encrypted backup' })).toBeVisible()
+  await page.getByLabel('Backup password').fill('not the password')
+  await page.getByRole('button', { name: 'Unlock' }).click()
+  await expect(page.getByText('Wrong password, or the vault data is damaged.')).toBeVisible()
+  await page.getByLabel('Backup password').fill(BACKUP_PASSWORD)
+  await page.getByRole('button', { name: 'Unlock' }).click()
+  for (const s of SEEDS) await expect(page.getByText(s.label, { exact: true })).toBeVisible()
+  await expect(page.getByText(/Read-only viewer/)).toBeVisible()
+  await page.getByRole('button', { name: /Cold storage/ }).click()
+  await expect(page.getByLabel('Word 1', { exact: true })).toHaveAttribute('readonly', '')
+
+  // Close forgets the vault and asks for a file again.
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Choose backup file' })).toBeVisible()
+  await expect(page.getByText(SEEDS[0].label)).toHaveCount(0)
+  // No policy violations, from the editor or from the viewer.
+  expect(errors).toEqual([])
+})
+
+test('the hosted viewer offers itself as one file, opens dropped backups and refuses other files', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'one engine check is enough')
+  const errors: string[] = []
+  page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()))
+  page.on('pageerror', (err) => errors.push(err.message))
+  await page.goto('/keyfold-viewer.html')
+
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: /Save this viewer/ }).click()])
+  expect(download.suggestedFilename()).toBe('keyfold-viewer.html')
+  const saved = test.info().outputPath('saved-viewer.html')
+  await download.saveAs(saved)
+  expect(readFileSync(saved, 'utf8')).toBe(readFileSync('dist/keyfold-viewer.html', 'utf8'))
+
+  await page.getByLabel('Backup file').setInputFiles({ name: 'other.json', mimeType: 'application/json', buffer: Buffer.from('{"not":"keyfold"}') })
+  await expect(page.getByText('This file is not a Keyfold backup or note.')).toBeVisible()
+  await page.getByLabel('Backup file').setInputFiles({ name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.from('') })
+  await expect(page.getByText('This file is empty.')).toBeVisible()
+
+  await page.locator('.screen').evaluate((screen, text) => {
+    const data = new DataTransfer()
+    data.items.add(new File([text], 'keyfold-backup.json', { type: 'application/json' }))
+    screen.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }))
+    screen.dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
+  }, KAT_BACKUP)
+  await expect(page.getByRole('heading', { name: 'Encrypted backup' })).toBeVisible()
+  await expect(page.getByText(/^Made January 2, 2026\./)).toBeVisible()
+  await page.getByLabel('Backup password').fill(KAT_PASSWORD)
+  await page.getByRole('button', { name: 'Unlock' }).click()
+  await expect(page.getByText('Known answer')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a backup pasted into a note opens with its password and is saved as an ordinary vault', async ({ page }) => {
+  const { app, errors } = await open(page, KAT_BACKUP)
+  await expect(app.getByRole('heading', { name: 'Encrypted backup' })).toBeVisible()
+  await app.getByLabel('Backup password').fill(KAT_PASSWORD)
+  await app.getByRole('button', { name: 'Unlock' }).click()
+  await expect(app.getByText('Known answer')).toBeVisible()
+  // The fixture's low iteration count makes Keyfold re-encrypt and save it right away.
+  await expect.poll(async () => (await noteJson(page))?.encryption?.iterations).toBe(600_000)
+  expect((await noteJson(page)).exportedAt).toBeUndefined()
+  await page.getByRole('button', { name: 'Reload editor' }).click()
+  await expect(app.getByRole('heading', { name: 'Vault locked' })).toBeVisible()
+  await app.getByLabel('Vault password').fill(KAT_PASSWORD)
+  await app.getByRole('button', { name: 'Unlock' }).click()
+  await expect(app.getByText('Known answer')).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('a backup password must match, and a weak one must be confirmed', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await app.getByRole('button', { name: 'Make a backup file' }).click()
+  // A backup has its own password: there is no current one to enter.
+  await expect(app.getByLabel('Current vault password')).toHaveCount(0)
+  const encrypt = app.getByRole('button', { name: 'Encrypt backup' })
+  await app.getByLabel('Backup password', { exact: true }).fill('1234567890')
+  await app.getByLabel('Repeat backup password').fill('1234567899')
+  await app.getByRole('checkbox', { name: /can open this backup/ }).check()
+  await expect(app.getByText('Passwords do not match.')).toBeVisible()
+  await expect(encrypt).toBeDisabled()
+  await app.getByLabel('Repeat backup password').fill('1234567890')
+  await expect(encrypt).toBeDisabled()
+  await app.getByRole('checkbox', { name: /Anyone who finds the backup file could guess it/ }).check()
+  await expect(encrypt).toBeEnabled()
+  await app.getByRole('button', { name: 'Cancel' }).click()
+  await expect(app.getByRole('button', { name: 'Make a backup file' })).toBeVisible()
+})
+
+test('copying a backup as text keeps it on the clipboard, past an earlier timed clear', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'waits for a timer; one profile is enough')
+  const { app } = await open(page, vaultText([SEEDS[0]], { clipboardClearSeconds: 5 }))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Copy phrase' }).click()
+  const copiedAt = Date.now()
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await app.getByRole('button', { name: 'Make a backup file' }).click()
+  await app.getByLabel('Backup password', { exact: true }).fill(BACKUP_PASSWORD)
+  await app.getByLabel('Repeat backup password').fill(BACKUP_PASSWORD)
+  await app.getByRole('checkbox', { name: /I understand/ }).check()
+  await app.getByRole('button', { name: 'Encrypt backup' }).click()
+  await app.getByRole('button', { name: 'Copy as text' }).click()
+  await expect(app.getByText(/Backup copied/)).toBeVisible()
+  const copied = await page.evaluate(() => navigator.clipboard.readText())
+  expect(JSON.parse(copied).encryption.cipher).toBe('AES-256-GCM')
+  // Past the phrase's clear time, and a click (when a blocked clear would run).
+  await page.waitForTimeout(Math.max(0, copiedAt + 6000 - Date.now()))
+  await app.getByRole('heading', { name: 'Vault settings' }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(copied)
+  // Copying counts as making the backup.
+  await expect.poll(async () => (await noteJson(page))?.vault?.settings?.lastExportedAt).toMatch(/^\d{4}-/)
+})
+
+test('in the phone apps, copying the backup comes first', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]]), { mobile: '1' })
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await app.getByRole('button', { name: 'Make a backup file' }).click()
+  await app.getByLabel('Backup password', { exact: true }).fill(BACKUP_PASSWORD)
+  await app.getByLabel('Repeat backup password').fill(BACKUP_PASSWORD)
+  await app.getByRole('checkbox', { name: /I understand/ }).check()
+  await app.getByRole('button', { name: 'Encrypt backup' }).click()
+  const copy = app.getByRole('button', { name: 'Copy as text' })
+  await expect(copy).toBeFocused()
+  await expect(copy).toHaveClass(/primary/)
+  await expect(app.getByText(/The Standard Notes phone app may not save files from plugins/)).toBeVisible()
+  // Saving is still offered, for the apps that do handle it.
+  await expect(app.getByRole('link', { name: 'Save file' })).toBeVisible()
+})
+
+test('a read-only note can still be backed up, without recording it', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await page.getByRole('button', { name: 'Toggle "Prevent editing"' }).click()
+  await expect(app.getByText('"Prevent editing" is on for this note.')).toBeVisible()
+  const backup = await exportBackup(page, app)
+  expect(JSON.parse(backup.text).encryption.cipher).toBe('AES-256-GCM')
+  await expect(app.getByText('No backup file made yet.')).toBeVisible()
+  expect(await page.evaluate(() => (window as any).mockHost.rejectedSaves ?? 0)).toBe(0)
+})
+
+test('no backup of an empty vault, or of one saved by a newer Keyfold', async ({ page }) => {
+  const { app } = await open(page, vaultText([]))
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await expect(app.getByText('There is nothing to back up yet.')).toBeVisible()
+  await expect(app.getByRole('button', { name: 'Make a backup file' })).toBeDisabled()
+
+  await page.evaluate((text) => (window as any).mockHost.restore(text), vaultText([SEEDS[0]], { layout: 'carousel' }))
+  await expect(app.getByText(/saved by a newer version of Keyfold\. Update Keyfold first/)).toBeVisible()
+  await expect(app.getByRole('button', { name: 'Make a backup file' })).toBeDisabled()
 })
 
 test('demo mode when opened directly', async ({ page }) => {

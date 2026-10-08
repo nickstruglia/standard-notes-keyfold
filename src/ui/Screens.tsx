@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { useFocusOnMount } from './context'
+import { formatDate } from './labels'
 import { encryptionAvailable } from '../lib/vaultCrypto'
 
-export const LockScreen = ({ onUnlock, autoFocus }: { onUnlock: (password: string) => Promise<void>; autoFocus: boolean }) => {
+interface LockScreenProps {
+  onUnlock: (password: string) => Promise<void>
+  autoFocus: boolean
+  /** Set when the text is a backup file, which has a password of its own. */
+  exportedAt?: string
+}
+
+export const LockScreen = ({ onUnlock, autoFocus, exportedAt }: LockScreenProps) => {
+  const what = exportedAt ? 'Backup password' : 'Vault password'
   const available = encryptionAvailable()
   const inputRef = useFocusOnMount<HTMLInputElement>(autoFocus && available)
   const [password, setPassword] = useState('')
@@ -27,8 +36,12 @@ export const LockScreen = ({ onUnlock, autoFocus }: { onUnlock: (password: strin
     <div class="screen">
       <form class="card lock-card" onSubmit={submit}>
         <Icon name="lock" size={32} />
-        <h2>Vault locked</h2>
-        <p class="muted small">This note has an extra vault password. Standard Notes cannot recover it for you.</p>
+        <h2>{exportedAt ? 'Encrypted backup' : 'Vault locked'}</h2>
+        <p class="muted small">
+          {exportedAt
+            ? `Made ${formatDate(exportedAt)}. Enter the password chosen when the backup was made.`
+            : 'This note has an extra vault password. Standard Notes cannot recover it for you.'}
+        </p>
         {!available && (
           <p class="status status-error" role="alert">
             <Icon name="alert" /> This page cannot decrypt vaults: encryption needs a secure (https) connection. Open the note
@@ -39,8 +52,8 @@ export const LockScreen = ({ onUnlock, autoFocus }: { onUnlock: (password: strin
           class="input"
           type="password"
           autocomplete="current-password"
-          placeholder="Vault password"
-          aria-label="Vault password"
+          placeholder={what}
+          aria-label={what}
           value={password}
           disabled={!available}
           onInput={(e) => setPassword(e.currentTarget.value)}

@@ -57,6 +57,7 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 - Spellcheck, autocorrect, autofill and password-manager capture are off on secret fields, so nothing is sent to cloud spellcheckers.
 - An optional **vault password** adds a second layer on top of Standard Notes' end-to-end encryption: AES-256-GCM with a key derived by PBKDF2-SHA256 (600,000 iterations). The vault auto-locks after inactivity. Weak passwords need an explicit confirmation, and restoring an unprotected version from note history is called out.
 - **Nothing leaves the editor.** The Content Security Policy blocks every outgoing connection, and scripts, images and fonts from other sites. The only outside files it loads are your Standard Notes theme's stylesheets. The only runtime dependency is Preact, and Keyfold talks to Standard Notes with its own small implementation of the plugin message protocol.
+- **Encrypted backup files** for a flash drive or anywhere outside Standard Notes, with a password of their own. The single-file offline viewer opens them in any browser, without Standard Notes or an internet connection (see [Recovering your data](#recovering-your-data-without-keyfold)). Settings shows when you last made one and how many entries changed since.
 - An optional privacy screen blurs the vault whenever the editor is not focused.
 - Follows Standard Notes' "Prevent editing" lock and its themes (built-in and installed, on desktop, web and phones), and never overwrites a note that already had other content. A vault saved by a newer Keyfold opens read-only rather than being rewritten.
 - Keyboard and screen-reader friendly, with Windows High Contrast support.
@@ -93,7 +94,7 @@ Tested in the Standard Notes Android app. Not yet verified on an iPhone (Safari'
 Read these before storing keys that protect real funds or systems:
 
 - **Who you trust.** Standard Notes loads Keyfold from the URL in `ext.json` (web and phones load it every time; desktop downloads each new version), so whoever controls that site controls the code that sees your secrets. If you are not the maintainer, fork this repository and install from your own GitHub Pages URL (see below). Settings → About shows which site your copy comes from.
-- **Exports and backups.** Standard Notes' exports, decrypted backups and the desktop app's optional plaintext backups contain your vault as plain JSON unless you set a vault password.
+- **Exports and backups.** Standard Notes' exports, decrypted backups and the desktop app's optional plaintext backups contain your vault as plain JSON unless you set a vault password. Keyfold's own backup files are always encrypted, with the password you choose when making them; anyone who gets the file can try guessing it offline, so make it a strong one.
 - **Your device.** A compromised computer, malicious browser extension or keylogger can read anything you type or reveal. For large amounts, keep keys on a hardware wallet and treat Keyfold as an encrypted record, not your only backup.
 - **Note history.** Standard Notes keeps earlier versions of a note. If you add a vault password after entering secrets, older revisions still hold the data without that extra layer (Standard Notes' own encryption still protects them). Set the password on a new vault before adding secrets, or delete the old revisions.
 - **Clipboard.** Clipboard clearing is best effort. Clipboard history tools (Windows Win+V, clipboard managers, universal clipboard) and phone keyboards (Gboard, Samsung Keyboard) keep their own copies, which no web page can delete. On a phone, delete the entry from the keyboard's clipboard panel, or turn its clipboard history off.
@@ -116,21 +117,29 @@ With a vault password, `vault` is replaced by an encrypted blob:
   "encryption": { "kdf": "PBKDF2-SHA256", "iterations": 600000, "salt": "...", "cipher": "AES-256-GCM", "iv": "...", "ciphertext": "..." } }
 ```
 
+A backup file has the same shape as an encrypted note, plus the time it was made (`"exportedAt"`), so anything that opens a note opens a backup.
+
 The preview in Standard Notes' note list contains only counts (for example "Keyfold: 2 seed phrases, 1 SSH key"), never labels or secrets.
 
 ## Recovering your data without Keyfold
 
-**Recovery viewer.** Open [the site with `#open`](https://nickstruglia.github.io/standard-notes-keyfold/#open), or unzip [`keyfold.zip`](https://nickstruglia.github.io/standard-notes-keyfold/keyfold.zip) and open `index.html#open` from disk to work offline. Paste the note's text, enter the vault password if it has one, and read your entries. It is read-only and saves nothing.
+**Backup files.** In Keyfold's **Settings → Backup file**, choose **Make a backup file**, pick a password for it and save the file (`keyfold-backup-<date>.json`) somewhere other than Standard Notes: a flash drive, an external disk, another cloud. Keep the [offline viewer](https://nickstruglia.github.io/standard-notes-keyfold/keyfold-viewer.html) next to it: its **Save this viewer** link downloads it as one file, `keyfold-viewer.html`, which is also in [`keyfold.zip`](https://nickstruglia.github.io/standard-notes-keyfold/keyfold.zip). Make a new backup after adding or changing keys.
+
+- **To read a backup**, open `keyfold-viewer.html` in any browser, choose the backup file (or drop it on the page) and enter its password. It works offline, is read-only and saves nothing.
+- **To restore a backup** into Standard Notes, paste the file's whole text into a new note, change the note type to Keyfold and unlock it with the backup password. Keyfold then saves it as an ordinary vault with that password.
+- **On a phone**, the Standard Notes app may not save files from plugins: use **Copy as text** and paste it into a file or another app, or make the backup on a computer.
+
+**Recovery viewer.** The same viewer opens a note's text: open `keyfold-viewer.html`, [the site with `#open`](https://nickstruglia.github.io/standard-notes-keyfold/#open) or `index.html#open` from the unzipped `keyfold.zip`, choose **Paste a note's text instead**, paste it and enter the vault password if it has one.
 
 To get the note's text, or if Keyfold does not open at all (offline phone, plugin removed, site down), open the note menu and change the note type to **Plain text** to read the JSON. Do not edit it there, and never convert it to **Super**: Super's import collapses spaces and drops text after a `<`. If you did, restore the note from **Note history**.
 
 A plain vault is readable as is: each entry has its `label`, `kind`, `words` (in order) or `secret`, and `\n` in a value is a line break.
 
-An encrypted vault can be decrypted with any WebCrypto implementation. This script runs in Node.js 20+ or in the console of any https page (not `about:blank`):
+An encrypted vault or backup file can be decrypted with any WebCrypto implementation. This script runs in Node.js 20+ or in the console of any https page (not `about:blank`):
 
 ```js
-const noteText = `...paste the whole note text here...`
-const password = '...your vault password...'
+const noteText = `...paste the whole note or backup file text here...`
+const password = '...your vault or backup password...'
 
 const { encryption: e } = JSON.parse(noteText)
 const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))

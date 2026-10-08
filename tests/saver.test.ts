@@ -4,7 +4,7 @@ import type { Host } from '../src/sn/host'
 
 const host = (): Host & { sent: string[] } => {
   const sent: string[] = []
-  return { mode: 'demo', sent, subscribe: () => undefined, save: (text) => sent.push(text) }
+  return { mode: 'demo', sent, inMobileApp: () => false, subscribe: () => undefined, save: (text) => sent.push(text) }
 }
 
 afterEach(() => vi.useRealTimers())

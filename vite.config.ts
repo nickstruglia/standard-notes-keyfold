@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { defineConfig } from 'vitest/config'
 import pkg from './package.json' with { type: 'json' }
 
@@ -41,6 +43,13 @@ const CSP = [
   "base-uri 'none'",
   "object-src 'none'",
 ].join('; ')
+
+// The offline viewer is one self-contained file for a flash drive next to
+// the backups: the whole app inlined, allowed to run by its hash only.
+const VIEWER_FILE = 'keyfold-viewer.html'
+const viewerCsp = (scriptHash: string) =>
+  CSP.replace(/script-src [^;]+/, `script-src 'sha256-${scriptHash}'`).replace(/style-src [^;]+/, "style-src 'unsafe-inline'")
+const favicon = () => `data:image/svg+xml,${encodeURIComponent(readFileSync('public/icon.svg', 'utf8'))}`
 
 const manifest = {
   identifier: 'io.github.nickstruglia.keyfold',
@@ -95,7 +104,7 @@ export default defineConfig({
             .replace('<!--CSP-->', `<meta http-equiv="Content-Security-Policy" content="${CSP}" />`)
             .replace(/<script type="module" crossorigin src=/g, '<script defer src=')
             // The favicon is inlined: img-src allows data: only.
-            .replace('href="./icon.svg"', `href="data:image/svg+xml,${encodeURIComponent(readFileSync('public/icon.svg', 'utf8'))}"`)
+            .replace('href="./icon.svg"', `href="${favicon()}"`)
           // Fail the build rather than ship without the policy or with a
           // module script (which the desktop app's offline server cannot load).
           if (!out.includes('http-equiv="Content-Security-Policy"')) throw new Error('CSP meta tag missing from index.html')
@@ -106,6 +115,40 @@ export default defineConfig({
       },
       generateBundle() {
         this.emitFile({ type: 'asset', fileName: 'ext.json', source: JSON.stringify(manifest, null, 2) + '\n' })
+      },
+      // After writing, so the script is exactly the file that index.html loads.
+      writeBundle(options, bundle) {
+        const entry = Object.values(bundle).find((file) => file.type === 'chunk' && file.isEntry)
+        if (!entry || !options.dir) throw new Error('no entry chunk to inline into the offline viewer')
+        const code = readFileSync(join(options.dir, entry.fileName), 'utf8')
+        // Any of these inside an inline script would end the tag early or change how it is parsed.
+        if (/<\/script|<script|<!--/i.test(code)) throw new Error('the bundle cannot be inlined into the offline viewer as is')
+        const hash = createHash('sha256').update(code).digest('base64')
+        if (!viewerCsp(hash).includes(`script-src 'sha256-${hash}';`) || viewerCsp(hash).includes(siteUrl)) {
+          throw new Error('the offline viewer would not get its own Content Security Policy')
+        }
+        const html = [
+          '<!doctype html>',
+          '<html lang="en" class="standalone" data-viewer>',
+          '<head>',
+          '<meta charset="UTF-8" />',
+          `<meta http-equiv="Content-Security-Policy" content="${viewerCsp(hash)}" />`,
+          '<meta name="referrer" content="no-referrer" />',
+          '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+          '<meta name="robots" content="noindex" />',
+          `<meta name="generator" content="Keyfold ${version}${commit ? ` (${commit})` : ''}" />`,
+          '<title>Keyfold offline viewer</title>',
+          `<link rel="icon" href="${favicon()}" type="image/svg+xml" />`,
+          '</head>',
+          '<body>',
+          '<noscript>The Keyfold viewer needs JavaScript.</noscript>',
+          '<div id="app"></div>',
+          `<script>${code}</script>`,
+          '</body>',
+          '</html>',
+          '',
+        ].join('\n')
+        writeFileSync(join(options.dir, VIEWER_FILE), html)
       },
     },
   ],

@@ -896,6 +896,28 @@ select.input {
 .open-note textarea {
   width: 100%;
 }
+.screen.dragging .open-note {
+  border-color: var(--info);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 30%, transparent);
+}
+.paste-note {
+  width: 100%;
+}
+.paste-note > summary {
+  font-size: 0.85rem;
+  color: var(--info);
+  cursor: pointer;
+}
+.paste-note > * + * {
+  margin-top: 10px;
+}
+
+a.button {
+  text-decoration: none;
+}
+.backup-ready > .row {
+  margin-bottom: 10px;
+}
 
 .password-form {
   max-width: 460px;

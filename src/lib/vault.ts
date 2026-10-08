@@ -19,11 +19,13 @@ export const README_NOTE =
   README_INTRO +
   'The vault below lists each entry with its label, kind and secret; seed phrase words are in order, and \\n in a value is a line break.'
 
-export const README_ENCRYPTED =
-  README_INTRO +
-  'The vault below is encrypted with your vault password: PBKDF2-SHA256 (password NFC-normalized, the salt and iteration count below) ' +
+/** How to decrypt without Keyfold, for notes and backup files alike. */
+export const encryptionReadme = (password: string): string =>
+  `The vault below is encrypted with ${password}: PBKDF2-SHA256 (password NFC-normalized, the salt and iteration count below) ` +
   'gives an AES-256-GCM key; the IV is below, the ciphertext ends with the 16-byte tag, the associated data is ' +
   '"keyfold|1|PBKDF2-SHA256|<iterations>|AES-256-GCM", and the plaintext is the vault as JSON.'
+
+export const README_ENCRYPTED = README_INTRO + encryptionReadme('your vault password')
 
 export interface CustomField {
   id: string
@@ -101,6 +103,8 @@ export interface VaultSettings {
   singleExpand: boolean
   groupBy: GroupBy
   sort: SortOrder
+  /** ISO timestamp of the last encrypted backup file made from this vault. '' = never. */
+  lastExportedAt: string
 }
 
 export type Layout = 'stacked' | 'split'
@@ -126,6 +130,7 @@ export const DEFAULT_SETTINGS: VaultSettings = {
   // Grouping by type keeps seed phrases and wallet keys at the top.
   groupBy: 'kind',
   sort: 'updated',
+  lastExportedAt: '',
 }
 
 export const today = (): string => {
@@ -281,6 +286,7 @@ export const normalizeVault = (raw: unknown): VaultData => {
       singleExpand: bool(s.singleExpand, DEFAULT_SETTINGS.singleExpand),
       groupBy: oneOf(s.groupBy, ['none', 'kind', 'chain', 'wallet', 'tag'], DEFAULT_SETTINGS.groupBy),
       sort: oneOf(s.sort, ['updated', 'label', 'created'], DEFAULT_SETTINGS.sort),
+      lastExportedAt: str(s.lastExportedAt),
     },
   }
   if (hasUnknownValues(o, s)) fromNewer.add(vault)
@@ -302,7 +308,8 @@ export interface EncryptedBlob {
 export type ParsedNote =
   | { kind: 'empty' }
   | { kind: 'plain'; vault: VaultData }
-  | { kind: 'encrypted'; blob: EncryptedBlob }
+  /** exportedAt: set when the text is a backup file rather than a note. */
+  | { kind: 'encrypted'; blob: EncryptedBlob; exportedAt?: string }
   | { kind: 'newer'; version: number }
   /** A Keyfold note whose encryption block this version cannot read. */
   | { kind: 'unsupported' }
@@ -340,7 +347,10 @@ export const parseNote = (input: string | undefined | null): ParsedNote => {
   const version = typeof o.version === 'number' ? o.version : 0
   if (version > FORMAT_VERSION) return { kind: 'newer', version }
   if (o.encryption !== undefined) {
-    return isBlob(o.encryption) ? { kind: 'encrypted', blob: o.encryption } : { kind: 'unsupported' }
+    if (!isBlob(o.encryption)) return { kind: 'unsupported' }
+    return typeof o.exportedAt === 'string'
+      ? { kind: 'encrypted', blob: o.encryption, exportedAt: o.exportedAt }
+      : { kind: 'encrypted', blob: o.encryption }
   }
   return { kind: 'plain', vault: normalizeVault(o.vault) }
 }

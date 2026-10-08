@@ -39,3 +39,9 @@ export const GROUP_OPTIONS: [GroupBy, string][] = [
 /** "Untitled seed phrase", but "Untitled SSH key": acronyms keep their capitals. */
 export const untitled = (kindLabel: string) =>
   `Untitled ${/^[A-Z][A-Z]/.test(kindLabel) ? kindLabel : kindLabel.toLowerCase()}`
+
+/** A date in the reader's language, e.g. "October 8, 2026". */
+export const formatDate = (iso: string): string => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+}

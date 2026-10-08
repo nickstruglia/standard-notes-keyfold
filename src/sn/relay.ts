@@ -77,6 +77,11 @@ export class StandardNotesRelay {
     setTimeout(this.reveal, REVEAL_AFTER_MS)
   }
 
+  /** Inside the Standard Notes phone apps (known once registered). */
+  get inMobileApp(): boolean {
+    return this.environment === 'native-mobile-web' || this.environment === 'mobile'
+  }
+
   /** Streams the note being edited; the callback runs on every change. */
   streamContextItem(callback: Callback): void {
     this.send('stream-context-item', {}, (data) => data?.item && callback(data.item), true)

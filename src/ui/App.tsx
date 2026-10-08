@@ -26,6 +26,7 @@ import {
 } from '../lib/vault'
 import { DEFAULT_ITERATIONS, type VaultKey, decryptVault, deriveKey, encryptVault, sameSalt, unlockVault } from '../lib/vaultCrypto'
 import { newId } from '../lib/encoding'
+import { createBackup } from '../lib/backup'
 import type { Host } from '../sn/host'
 import { Saver } from '../sn/saver'
 
@@ -35,7 +36,7 @@ type Phase =
   | { name: 'newer'; version: number }
   | { name: 'unsupported' }
   /** autoFocus: put the cursor in the password field (not when a timer or another device locked it while the user was elsewhere). */
-  | { name: 'locked'; blob: EncryptedBlob; autoFocus: boolean }
+  | { name: 'locked'; blob: EncryptedBlob; autoFocus: boolean; exportedAt?: string }
   | { name: 'ready' }
 
 type View = { type: 'list' } | { type: 'entry'; id: string } | { type: 'settings' }
@@ -217,7 +218,7 @@ export const App = ({ host }: { host: Host }) => {
           if (seq !== incomingSeq.current) return
           if (keyRef.current) wipeUnlocked()
           showVault(emptyVault())
-          setPhase({ name: 'locked', blob: parsed.blob, autoFocus: first || document.hasFocus() })
+          setPhase({ name: 'locked', blob: parsed.blob, autoFocus: first || document.hasFocus(), exportedAt: parsed.exportedAt })
           return
         }
         case 'foreign':
@@ -292,7 +293,7 @@ export const App = ({ host }: { host: Host }) => {
     // wipeUnlocked cancels pending work but keeps the record of recent saves,
     // so their echoes are still recognized after the lock.
     wipeUnlocked()
-    setPhase({ name: 'locked', blob: parsed.blob, autoFocus: manual || document.hasFocus() })
+    setPhase({ name: 'locked', blob: parsed.blob, autoFocus: manual || document.hasFocus(), exportedAt: parsed.exportedAt })
   }, [saver])
 
   // Auto-lock after inactivity.
@@ -384,6 +385,21 @@ export const App = ({ host }: { host: Host }) => {
     setHasPassword(false)
     saver.schedule(() => serialize(vaultRef.current))
     toast('Vault password removed. Standard Notes encryption still protects the note.', 'success')
+  }
+
+  const exportBackup = (password: string) => {
+    if (isFromNewerVersion(vaultRef.current)) throw new Error('Update Keyfold before making a backup of this vault.')
+    return createBackup(vaultRef.current, password)
+  }
+
+  /** The backup is encrypted, so it stays on the clipboard until pasted. */
+  const copyBackup = async (text: string) => {
+    if (!(await copyText(text))) return false
+    // Whatever secret a pending clear was waiting for is no longer on the clipboard.
+    copySeq.current++
+    if (pendingClear.current?.blockedToast) dismissToast(pendingClear.current.blockedToast)
+    pendingClear.current = null
+    return true
   }
 
   /** Starts the timed clear after something secret reached the clipboard. */
@@ -706,7 +722,7 @@ export const App = ({ host }: { host: Host }) => {
       body = <ConnectingScreen slow={slow} />
       break
     case 'locked':
-      body = <LockScreen onUnlock={unlock} autoFocus={phase.autoFocus} />
+      body = <LockScreen onUnlock={unlock} autoFocus={phase.autoFocus} exportedAt={phase.exportedAt} />
       break
     case 'foreign':
       body = <ForeignScreen length={phase.text.length} readOnly={noteLocked} onConvert={() => convertForeign(phase.text)} />
@@ -750,12 +766,17 @@ export const App = ({ host }: { host: Host }) => {
         body = (
           <main class="detail full">
             <Settings
+              vault={vault}
               settings={settings}
               hasPassword={hasPassword}
               onChange={updateSettings}
               onSetPassword={setPassword}
               onChangePassword={changePassword}
               onRemovePassword={removePassword}
+              onExport={exportBackup}
+              onExported={(backup) => updateSettings({ lastExportedAt: backup.exportedAt })}
+              onCopyBackup={copyBackup}
+              mobileApp={host.inMobileApp()}
               onLock={() => lock(true)}
               onClose={() => setView({ type: 'list' })}
             />
@@ -843,12 +864,16 @@ export const App = ({ host }: { host: Host }) => {
           <div class="banner banner-warn" role="note">
             <Icon name="alert" /> Demo mode: not connected to Standard Notes, nothing is saved. Do not type real secrets here.
             To install, add <code>{new URL('ext.json', location.href).href}</code> in Standard Notes → Preferences → Plugins.{' '}
-            Lost access to Keyfold? <a href="#open" onClick={() => setTimeout(() => location.reload())}>Open a note read-only</a>.
+            Lost access to Keyfold? <a href="#open" onClick={() => setTimeout(() => location.reload())}>Open a backup or note read-only</a>.
           </div>
         )}
         {host.mode === 'viewer' && (
           <div class="banner" role="note">
-            <Icon name="lock" /> Read-only viewer: nothing you open here is saved or sent anywhere. Close the tab when done.
+            <Icon name="lock" /> Read-only viewer: nothing you open here is saved or sent anywhere.
+            {/* Reloading forgets the opened vault and shows the open screen again. */}
+            <button type="button" class="link-button" onClick={() => location.reload()}>
+              Close
+            </button>
           </div>
         )}
         {fromNewer && phase.name === 'ready' && (
