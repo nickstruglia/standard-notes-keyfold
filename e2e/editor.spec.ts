@@ -15,11 +15,12 @@ const noteJson = async (page: Page) => {
 }
 const preview = (page: Page) => page.evaluate(() => (window as any).mockHost.note.content.preview_plain as string)
 
-const open = async (page: Page, text = '') => {
+const open = async (page: Page, text = '', options: Record<string, string> = {}) => {
   const errors: string[] = []
   page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()))
   page.on('pageerror', (err) => errors.push(err.message))
-  await page.goto('/dev/host.html' + (text ? `?text=${encodeURIComponent(text)}` : ''))
+  const query = new URLSearchParams({ ...(text ? { text } : {}), ...options }).toString()
+  await page.goto('/dev/host.html' + (query ? `?${query}` : ''))
   return { app: page.frameLocator('#editor'), errors }
 }
 
@@ -99,6 +100,9 @@ test('reveals, copies with a toast, and hides all', async ({ page }) => {
   await app.getByRole('button', { name: 'Copy phrase' }).click()
   await expect(app.getByText('Seed phrase copied. Clearing the clipboard in 30s.')).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(PHRASE)
+  // Phones are told that their keyboard may keep its own clipboard history.
+  const touch = test.info().project.name !== 'desktop'
+  await expect(app.getByText("Your keyboard's clipboard history may keep its own copy.")).toHaveCount(touch ? 1 : 0)
 
   await app.getByRole('button', { name: 'Hide all' }).click()
   await expect(word1).toHaveAttribute('type', 'password')
@@ -187,13 +191,37 @@ test('never overwrites a note that has other content', async ({ page }) => {
   })
 })
 
+const background = (app: App) => app.locator('body').evaluate((el) => getComputedStyle(el).backgroundColor)
+
 test('applies Standard Notes themes', async ({ page }) => {
   const { app, errors } = await open(page)
   await expect(app.getByText('No keys yet.')).toBeVisible()
+  await expect(app.locator('html')).not.toHaveClass(/theme-pending/)
+  await expect(app.locator('html')).toHaveCSS('color-scheme', 'light')
   await page.getByRole('button', { name: 'Toggle dark theme' }).click()
-  await expect
-    .poll(() => app.locator('body').evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe('rgb(21, 22, 26)')
+  await expect.poll(() => background(app)).toBe('rgb(21, 22, 26)')
+  // Checkboxes, date pickers and scrollbars follow the theme too.
+  await expect(app.locator('html')).toHaveCSS('color-scheme', 'dark')
+  await page.getByRole('button', { name: 'Toggle dark theme' }).click()
+  await expect.poll(() => background(app)).toBe('rgb(255, 255, 255)')
+  await expect(app.locator('html')).toHaveCSS('color-scheme', 'light')
+  expect(errors).toEqual([])
+})
+
+test('applies the built-in themes the mobile apps pass as file:// URLs', async ({ page }) => {
+  // The mobile apps' theme files cannot load in a page served over HTTPS, so
+  // Keyfold loads the copies Standard Notes serves for its web app.
+  const requested: string[] = []
+  await page.route('https://app.standardnotes.com/components/assets/**', (route) => {
+    requested.push(route.request().url())
+    return route.fulfill({ path: 'dev/dark-theme.css', contentType: 'text/css' })
+  })
+  const { app, errors } = await open(page, '', { mobile: '1', theme: 'dark' })
+  await expect(app.getByText('No keys yet.')).toBeVisible()
+  await expect.poll(() => background(app)).toBe('rgb(21, 22, 26)')
+  await expect(app.locator('html')).toHaveCSS('color-scheme', 'dark')
+  await expect(app.locator('html')).not.toHaveClass(/theme-pending/)
+  expect(requested).toEqual(['https://app.standardnotes.com/components/assets/org.standardnotes.theme-focus/index.css'])
   expect(errors).toEqual([])
 })
 
@@ -291,6 +319,17 @@ test('view options still work when the note is read-only', async ({ page }) => {
   await app.getByLabel('Compact').check()
   await expect(app.locator('.app.compact')).toHaveCount(1)
   expect(await noteText(page)).toBe(before)
+})
+
+test('fits eight-letter words in the narrowest word fields', async ({ page }) => {
+  // Chrome on Android kept room for a wordlist arrow and cut off the last letter.
+  const words = ['abstract', 'accident', 'abandon', 'zoo', 'abstract', 'accident', 'abandon', 'zoo', 'abstract', 'accident', 'abandon', 'about']
+  const { app } = await open(page, vaultText([seed('a', 'Long words', 'Bitcoin', words.join(' '))]))
+  await app.getByText('Long words').click()
+  await app.getByRole('button', { name: 'Reveal words' }).click()
+  await app.locator('.word-grid').evaluate((el: HTMLElement) => (el.style.gridTemplateColumns = 'repeat(3, 120px)'))
+  const overflow = await app.locator('.word .input').evaluateAll((els) => els.map((el) => el.scrollWidth - el.clientWidth))
+  expect(overflow).toEqual(words.map(() => 0))
 })
 
 test('clears the clipboard, with a button when the sandbox blocks doing it automatically', async ({ page }) => {

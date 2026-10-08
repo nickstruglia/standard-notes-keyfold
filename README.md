@@ -52,9 +52,9 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 - Copying a secret clears the clipboard after 30 seconds. Inside Standard Notes the browser only allows this during a click or tap, so if it is blocked the clipboard clears on your next click, or with the **Clear now** button.
 - Spellcheck, autocorrect, autofill and password-manager capture are off on secret fields, so nothing is sent to cloud spellcheckers.
 - An optional **vault password** adds a second layer on top of Standard Notes' end-to-end encryption: AES-256-GCM with a key derived by PBKDF2-SHA256 (600,000 iterations). The vault auto-locks after inactivity.
-- **No network access.** The Content Security Policy blocks every outgoing connection, and the only runtime dependency is Preact. Keyfold talks to Standard Notes with its own small implementation of the plugin message protocol.
+- **Nothing leaves the editor.** The Content Security Policy blocks every outgoing connection, and scripts, images and fonts from other sites. The only outside files it loads are your Standard Notes theme's stylesheets. The only runtime dependency is Preact, and Keyfold talks to Standard Notes with its own small implementation of the plugin message protocol.
 - An optional privacy screen blurs the vault whenever the editor is not focused.
-- Follows Standard Notes' "Prevent editing" lock and its themes, and never overwrites a note that already had other content.
+- Follows Standard Notes' "Prevent editing" lock and its themes (built-in and installed, on desktop, web and phones), and never overwrites a note that already had other content.
 
 ## Install
 
@@ -71,7 +71,9 @@ Open the URL above without `ext.json` to try a demo in your browser (sample data
 
 The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so Keyfold needs an internet connection on a phone (the desktop app can keep an offline copy). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
 
-Not yet verified on real devices: Safari's engine (iPhones use WebKit) and Standard Notes themes inside the mobile apps. Try it with a dummy phrase first.
+The phone apps pass Standard Notes' built-in themes to plugins as local files, which a plugin loaded from the web is not allowed to open, so Keyfold loads the same theme from Standard Notes' web app (`app.standardnotes.com`) instead.
+
+Tested in the Standard Notes Android app. Not yet verified on an iPhone (Safari's engine, WebKit). Try it with a dummy phrase first.
 
 ## Security notes
 
@@ -80,7 +82,7 @@ Read these before storing keys that protect real funds or systems:
 - **Who you trust.** Standard Notes loads Keyfold from the URL in `ext.json` every time you open the note, so whoever controls that site controls the code that sees your secrets. If you are not the maintainer, fork this repository and install from your own GitHub Pages URL (see below).
 - **Your device.** A compromised computer, malicious browser extension or keylogger can read anything you type or reveal. For large amounts, keep keys on a hardware wallet and treat Keyfold as an encrypted record, not your only backup.
 - **Note history.** Standard Notes keeps earlier versions of a note. If you add a vault password after entering secrets, older revisions still hold the data without that extra layer (Standard Notes' own encryption still protects them). Set the password on a new vault before adding secrets, or delete the old revisions.
-- **Clipboard.** Clipboard clearing is best effort. Clipboard history tools (Windows Win+V, clipboard managers, universal clipboard) may keep copies.
+- **Clipboard.** Clipboard clearing is best effort. Clipboard history tools (Windows Win+V, clipboard managers, universal clipboard) and phone keyboards (Gboard, Samsung Keyboard) keep their own copies, which no web page can delete. On a phone, delete the entry from the keyboard's clipboard panel, or turn its clipboard history off.
 - **Forgotten vault password.** It cannot be recovered by anyone.
 
 See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
@@ -115,7 +117,7 @@ npm run build
 npm run test:e2e   # Playwright tests against the production build, on desktop and phone screen sizes
 ```
 
-`dev/host.html` is a mock of the Standard Notes side of the plugin protocol (`dev/null-origin.html` wraps it so the app's origin is "null", as in the mobile apps). It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device.
+`dev/host.html` is a mock of the Standard Notes side of the plugin protocol (`dev/null-origin.html` wraps it so the app's origin is "null", as in the mobile apps). It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device. Add `?mobile=1` to register the way the Android app does, with its `file://` theme URLs.
 
 ## Deploy your own copy
 

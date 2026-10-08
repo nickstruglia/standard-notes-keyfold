@@ -40,19 +40,40 @@ const newMessageId = (): string =>
 export const replyTarget = (origin: string | undefined): string =>
   origin && /^https?:\/\//.test(origin) ? origin : '*'
 
+/** Standard Notes' web app serves its built-in themes here. */
+const HOSTED_THEMES = 'https://app.standardnotes.com/components/assets/'
+
+/**
+ * Where to load a theme stylesheet from. The mobile apps pass their built-in
+ * themes as file:// URLs, which a page served over HTTPS may not load, so
+ * those load from the copies Standard Notes serves for its web app.
+ */
+export const themeUrl = (url: string): string | undefined => {
+  if (/^https?:\/\//i.test(url)) return url
+  const builtIn = /\/components\/assets\/([a-z0-9][a-z0-9.-]*)\/([\w.-]+(?:\/[\w.-]+)*\.css)$/i.exec(url)
+  if (!builtIn || builtIn[0].includes('..')) return undefined
+  return `${HOSTED_THEMES}${builtIn[1]}/${builtIn[2]}`
+}
+
+/** The page stays invisible until its theme applies, or this long at most. */
+const REVEAL_AFTER_MS = 2000
+const THEME_TIMEOUT_MS = 5000
+
 export class StandardNotesRelay {
   private sessionKey: string | undefined
   private origin: string | undefined
   private environment: string | undefined
   private queue: { action: string; data: unknown; callback?: Callback; keep: boolean }[] = []
   private callbacks = new Map<string, { callback: Callback; keep: boolean }>()
-  private themeUrls: string[] = []
+  private themeLoads = new WeakMap<Element, Promise<unknown>>()
+  private themeGeneration = 0
 
   constructor(private win: Window = window) {
     win.addEventListener('message', this.onMessage)
     win.addEventListener('click', this.onClick)
     win.addEventListener('keydown', this.onKey)
     win.addEventListener('keyup', this.onKey)
+    setTimeout(this.reveal, REVEAL_AFTER_MS)
   }
 
   /** Streams the note being edited; the callback runs on every change. */
@@ -99,12 +120,12 @@ export class StandardNotesRelay {
         this.sessionKey = message.sessionKey
         this.origin = event.origin
         this.environment = message.data?.environment
-        this.activateThemes(message.data?.activeThemeUrls ?? [])
+        this.activateThemes(message.data?.activeThemeUrls)
         this.send('themes-activated', {})
         for (const queued of this.queue.splice(0)) this.send(queued.action, queued.data, queued.callback, queued.keep)
         return
       case 'themes':
-        this.activateThemes(message.data?.themes ?? [])
+        this.activateThemes(message.data?.themes)
         return
       case 'reply': {
         const id = message.original?.messageId
@@ -141,22 +162,54 @@ export class StandardNotesRelay {
     })
   }
 
-  /** Loads the active Standard Notes theme stylesheets, replacing the previous ones. */
-  private activateThemes(urls: string[]): void {
-    const next = urls.filter((url) => typeof url === 'string' && url)
-    if (next.join('\n') === this.themeUrls.join('\n')) return
+  /**
+   * Loads the active Standard Notes theme stylesheets. The previous ones are
+   * removed only once the new ones load, so switching themes never flashes
+   * the default theme.
+   */
+  private activateThemes(urls: unknown): void {
+    const list = Array.isArray(urls) ? urls.filter((url): url is string => typeof url === 'string') : []
+    const next = [...new Set(list.map(themeUrl).filter((url): url is string => !!url))]
     const doc = this.win.document
-    doc.querySelectorAll('link[data-sn-theme]').forEach((link) => {
-      if (!next.includes(link.getAttribute('href') ?? '')) link.remove()
-    })
+    const current = [...doc.querySelectorAll('link[data-sn-theme]')]
+    const loads: Promise<unknown>[] = []
     for (const url of next) {
-      if (this.themeUrls.includes(url)) continue
+      const existing = current.find((link) => link.getAttribute('href') === url)
+      if (existing) {
+        loads.push(this.themeLoads.get(existing) ?? Promise.resolve())
+        continue
+      }
       const link = doc.createElement('link')
+      const load = new Promise((resolve) => {
+        link.onload = link.onerror = resolve
+        setTimeout(resolve, THEME_TIMEOUT_MS)
+      })
+      this.themeLoads.set(link, load)
+      loads.push(load)
       link.rel = 'stylesheet'
       link.href = url
       link.setAttribute('data-sn-theme', '')
       doc.head.appendChild(link)
     }
-    this.themeUrls = next
+    const generation = ++this.themeGeneration
+    void Promise.all(loads).then(() => {
+      if (generation !== this.themeGeneration) return
+      for (const link of current) if (!next.includes(link.getAttribute('href') ?? '')) link.remove()
+      this.updateColorScheme()
+      this.reveal()
+    })
+  }
+
+  /** Matches checkboxes, date pickers and scrollbars to a light or dark theme. */
+  private updateColorScheme(): void {
+    const doc = this.win.document
+    const rgb = /^rgba?\(([^)]*)\)/.exec(this.win.getComputedStyle(doc.body).backgroundColor)?.[1].split(/[\s,/]+/).map(Number)
+    if (!rgb || rgb.length < 3 || rgb[3] === 0) return
+    const luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+    doc.documentElement.style.colorScheme = luminance < 128 ? 'dark' : 'light'
+  }
+
+  private reveal = (): void => {
+    this.win.document.documentElement.classList.remove('theme-pending')
   }
 }

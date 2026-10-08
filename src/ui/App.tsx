@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Icon } from './icons'
-import { UiContext, type ConfirmOptions, type Ui } from './context'
+import { UiContext, isTouchDevice, type ConfirmOptions, type Ui } from './context'
 import { EditorDatalists, EntryEditor, type EntryHandlers } from './EntryEditor'
 import { EntryList, type Filter, type LayoutSnapshot, groupEntries, snapshotOf, stabilize, visibleEntries } from './EntryList'
 import { EntryStack } from './EntryStack'
@@ -312,12 +312,20 @@ export const App = ({ host }: { host: Host }) => {
     }
     const secs = settingsRef.current.clipboardClearSeconds
     const id = ++copySeq.current
-    toast(secs ? `${what} copied. Clearing the clipboard in ${secs}s.` : `${what} copied.`, 'success')
+    // Phone keyboards (Gboard, Samsung Keyboard...) keep their own clipboard
+    // history, which no web page can clear.
+    const touch = isTouchDevice()
+    const copied = secs ? `${what} copied. Clearing the clipboard in ${secs}s.` : `${what} copied.`
+    toast(touch ? `${copied} Your keyboard's clipboard history may keep its own copy.` : copied, 'success', undefined, touch ? 7000 : 4000)
     if (!secs) return
+    const cleared = () =>
+      touch
+        ? toast("Clipboard cleared. Delete it from your keyboard's clipboard history too.", 'info', undefined, 6000)
+        : toast('Clipboard cleared.', 'info', undefined, 3000)
     setTimeout(async () => {
       if (id !== copySeq.current) return
       if (await clearClipboard()) {
-        toast('Clipboard cleared.', 'info', undefined, 3000)
+        cleared()
         return
       }
       // Inside Standard Notes the browser only allows clipboard writes during
@@ -328,7 +336,7 @@ export const App = ({ host }: { host: Host }) => {
         if (await clearClipboard()) {
           done = true
           window.removeEventListener('click', clearOnce, true)
-          toast('Clipboard cleared.', 'info', undefined, 3000)
+          cleared()
         }
       }
       window.addEventListener('click', clearOnce, true)

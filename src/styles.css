@@ -39,6 +39,12 @@
   }
 }
 
+/* Inside Standard Notes the page stays hidden until the theme loads (see
+   relay.ts), so dark themes do not open with a white flash. */
+html.theme-pending {
+  opacity: 0;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -819,7 +825,17 @@ select.input {
   pointer-events: none;
 }
 .word .input {
-  padding-left: 32px;
+  padding-left: 30px;
+  padding-right: 6px;
+}
+/* Chrome keeps room for a suggestions arrow at the end of fields with a
+   wordlist, which cut off the last letter of words on Android. */
+.word .input::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+/* Safari's equivalent, in its own rule so Chrome cannot drop the one above. */
+.word .input::-webkit-list-button {
+  display: none !important;
 }
 .word-invalid .input {
   border-color: var(--danger);

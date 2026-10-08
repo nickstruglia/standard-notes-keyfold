@@ -14,7 +14,7 @@ const state = {
   },
   saves: [],
   contextMessage: null,
-  theme: false,
+  theme: params.get('theme') === 'dark',
 }
 window.mockHost = state
 // Lets tests stream arbitrary text, e.g. a revision restored from note history.
@@ -65,16 +65,31 @@ window.addEventListener('message', (event) => {
   }
 })
 
+// ?mobile=1 registers the way the Android app does, which passes its built-in
+// themes as file:// URLs.
+const mobile = params.get('mobile') === '1'
+
+const themeUrls = () => {
+  if (!state.theme) return []
+  if (mobile) return ['file:///android_asset/Web.bundle/src/web-src/components/assets/org.standardnotes.theme-focus/index.css']
+  return [new URL('./dark-theme.css', location.href).href]
+}
+
 const register = () => {
   send({
     action: 'component-registered',
     sessionKey,
     componentData: {},
-    data: { uuid: 'component-1', environment: 'web', platform: 'linux', activeThemeUrls: state.theme ? [themeUrl()] : [] },
+    data: {
+      uuid: 'component-1',
+      environment: mobile ? 'native-mobile-web' : 'web',
+      platform: mobile ? 'android' : 'linux',
+      activeThemeUrls: themeUrls(),
+    },
   })
+  // Standard Notes follows registration with the same themes again.
+  send({ action: 'themes', data: { themes: themeUrls() } })
 }
-
-const themeUrl = () => new URL('./dark-theme.css', location.href).href
 
 // The same sandbox Standard Notes gives third-party plugins (IframeFeatureView.tsx):
 // no allow-same-origin, so the editor runs with an opaque "null" origin, and no
@@ -96,7 +111,7 @@ document.getElementById('toggle-lock').onclick = () => {
 }
 document.getElementById('toggle-theme').onclick = () => {
   state.theme = !state.theme
-  send({ action: 'themes', data: { themes: state.theme ? [themeUrl()] : [] } })
+  send({ action: 'themes', data: { themes: themeUrls() } })
 }
 document.getElementById('remote-edit').onclick = () => {
   const text = state.note.content.text
