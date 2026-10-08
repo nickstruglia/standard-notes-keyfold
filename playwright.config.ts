@@ -13,6 +13,8 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
     { name: 'android', use: { ...devices['Pixel 7'] } },
     { name: 'iphone-size', use: { ...devices['iPhone 13'], browserName: 'chromium' } },
+    // The narrowest phones in use (iPhone SE/mini with display zoom, Galaxy Fold cover screen).
+    { name: 'small-phone', use: { ...devices['Pixel 7'], viewport: { width: 320, height: 640 } } },
   ],
   webServer: {
     command: 'node scripts/serve.mjs',

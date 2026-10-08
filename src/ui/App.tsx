@@ -289,8 +289,9 @@ export const App = ({ host }: { host: Host }) => {
       if (manual) toast('This note is not password protected, so it cannot be locked.', 'error')
       return
     }
+    // wipeUnlocked cancels pending work but keeps the record of recent saves,
+    // so their echoes are still recognized after the lock.
     wipeUnlocked()
-    saver.forget()
     setPhase({ name: 'locked', blob: parsed.blob, autoFocus: manual || document.hasFocus() })
   }, [saver])
 
@@ -326,7 +327,9 @@ export const App = ({ host }: { host: Host }) => {
       // A newer version arrived while the key was being derived; open that one.
       const latest = parseNote(saver.lastText)
       if (latest.kind !== 'encrypted' || !sameSalt(latest.blob, vaultKey)) throw new Error(CHANGED_DURING_ACTION)
+      const again = incomingSeq.current
       data = await decryptVault(latest.blob, vaultKey)
+      if (again !== incomingSeq.current) throw new Error(CHANGED_DURING_ACTION)
     }
     keyRef.current = vaultKey
     showVault(data)

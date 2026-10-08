@@ -23,8 +23,12 @@ export const fromHex = (hex: string): Uint8Array => {
 }
 
 export const toBase64 = (bytes: Uint8Array): string => {
+  // In chunks: one character at a time is slow for large vaults, and one
+  // call with every byte would overflow the argument limit.
   let binary = ''
-  for (const b of bytes) binary += String.fromCharCode(b)
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
   return btoa(binary)
 }
 

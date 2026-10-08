@@ -1,0 +1,10 @@
+{
+  // The shipped code only: limited to ES2021 so features older iPhones lack
+  // (Array.prototype.at, findLast, Object.hasOwn...) fail the type check.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"]
+  },
+  "include": ["src"]
+}

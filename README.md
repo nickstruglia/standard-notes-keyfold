@@ -142,7 +142,7 @@ The format: PBKDF2-SHA256 over the NFC-normalized password with the stored salt 
 
 ## Development
 
-Requires Node.js 22.
+Requires Node.js 22.12 or later. Dependencies never run install scripts (`.npmrc`).
 
 ```bash
 npm ci
@@ -150,7 +150,7 @@ npm run dev        # then open http://localhost:5173/dev/host.html?sandbox=0
 npm run typecheck
 npm test           # unit tests (validators checked against @scure reference libraries and published test vectors)
 npm run build
-npm run test:e2e   # Playwright tests against the production build, on desktop and phone screen sizes
+npm run test:e2e   # Playwright tests against the production build: desktop, Android, iPhone and 320 px phone sizes
 ```
 
 `dev/host.html` is a mock of the Standard Notes side of the plugin protocol (`dev/null-origin.html` wraps it so the app's origin is "null", as in the mobile apps). It frames the editor with the same sandbox Standard Notes uses (add `?sandbox=0` for the Vite dev server, whose ES modules need same-origin access). It shows the saved note text live, and it can toggle "Prevent editing", switch to a dark theme, and simulate an edit from another device. Add `?mobile=1` to register the way the phone apps do, with themes as `data:` URLs (`?mobile=file` for their `file://` fallback).

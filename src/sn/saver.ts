@@ -1,6 +1,8 @@
 import type { Host } from './host'
 
-const ECHO_WINDOW_MS = 5000
+// Standard Notes echoes a save back within moments. Kept short, so a
+// history restore of a just-saved version right after it still counts.
+const ECHO_WINDOW_MS = 2000
 
 export interface Serialized {
   text: string
@@ -10,8 +12,10 @@ export interface Serialized {
 /**
  * Debounces saves and keeps them in order even though serializing can be
  * async (encryption). Serialization starts immediately on every change so a
- * ready result can be flushed synchronously when the editor is about to go
- * away (switching notes destroys the iframe).
+ * ready result can be flushed synchronously when the editor loses focus or
+ * is hidden. (When Standard Notes switches notes it removes the viewer before
+ * the iframe, so a save sent from pagehide is dropped; the blur and
+ * visibilitychange flushes are the ones that count.)
  */
 export class Saver {
   private version = 0

@@ -622,7 +622,7 @@ test('a revision restored from note history replaces the current content', async
   await expect.poll(() => noteText(page)).toContain('second version')
 
   // History restores happen well after the save they bring back.
-  await page.waitForTimeout(5500)
+  await page.waitForTimeout(2500)
   await page.evaluate((text) => (window as any).mockHost.restore(text), first)
   await expect(app.getByLabel('Label')).toHaveValue('first version')
   // And a later edit builds on the restored version.
