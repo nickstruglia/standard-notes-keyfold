@@ -9,6 +9,10 @@
       aside { padding: 12px; overflow: auto; background: #f4f4f4; }
       pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; background: #fff; padding: 8px; border: 1px solid #ddd; max-height: 50vh; overflow: auto; }
       button { margin: 2px 0; }
+      @media (max-width: 800px) {
+        body { grid-template-columns: 1fr; grid-template-rows: 75vh auto; height: auto; }
+        iframe { height: 75vh; border-right: 0; border-bottom: 1px solid #ccc; }
+      }
     </style>
   </head>
   <body>
