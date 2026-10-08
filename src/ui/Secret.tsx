@@ -101,7 +101,6 @@ export const SecretField = ({ value, onInput, label, placeholder, multiline, mon
           class="icon-button"
           title={revealed ? 'Hide' : 'Reveal'}
           aria-label={`${revealed ? 'Hide' : 'Reveal'} ${label}`}
-          aria-pressed={revealed}
           onClick={() => setRevealed(!revealed)}
         >
           <Icon name={revealed ? 'eyeOff' : 'eye'} />

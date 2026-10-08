@@ -5,6 +5,7 @@ import {
   createEntry,
   emptyVault,
   isBackupDue,
+  isFromNewerVersion,
   parseNote,
   previewText,
   serializeEncrypted,
@@ -146,5 +147,23 @@ describe('note preview safety', () => {
     const key = await deriveKey('pw', undefined, 1000)
     const encrypted = serializeEncrypted(await encryptVault(emptyVault(), key))
     expect(encrypted.indexOf('"encryption"')).toBeGreaterThan(160)
+  })
+})
+
+describe('forward compatibility', () => {
+  it('marks vaults with values from a newer Keyfold, so they open read-only', () => {
+    const parse = (vault: object) => {
+      const parsed = parseNote(JSON.stringify({ app: APP_ID, version: 1, vault }))
+      return parsed.kind === 'plain' ? parsed.vault : null
+    }
+    expect(isFromNewerVersion(parse({ entries: [{ id: 'a', kind: 'mnemonic' }] })!)).toBe(false)
+    expect(isFromNewerVersion(parse({ entries: [{ id: 'a', kind: 'passkey' }] })!)).toBe(true)
+    expect(isFromNewerVersion(parse({ entries: [{ id: 'a', kind: 'mnemonic', scheme: 'polyseed' }] })!)).toBe(true)
+    expect(isFromNewerVersion(parse({ entries: [], settings: { layout: 'grid' } })!)).toBe(true)
+  })
+
+  it('ignores timing settings too large for timers', () => {
+    const parsed = parseNote(JSON.stringify({ app: APP_ID, version: 1, vault: { entries: [], settings: { autoHideSeconds: 3e9 } } }))
+    expect(parsed.kind === 'plain' && parsed.vault.settings.autoHideSeconds).toBe(30)
   })
 })

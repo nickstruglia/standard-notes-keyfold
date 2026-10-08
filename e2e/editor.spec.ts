@@ -233,6 +233,8 @@ test('respects "Prevent editing" and remote changes', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Simulate edit from another device' }).click()
   await expect(app.getByText('Added on another device')).toBeVisible()
+  // Keyfold never tried to save while editing was prevented.
+  expect(await page.evaluate(() => (window as any).mockHost.rejectedSaves ?? 0)).toBe(0)
 })
 
 test('never overwrites a note that has other content', async ({ page }) => {

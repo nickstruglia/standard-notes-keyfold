@@ -23,9 +23,17 @@ const EntryCard = memo(({ entry, open, reminderMonths, isNew, onToggle, ...handl
   return (
     <li ref={ref} class={`card-entry ${open ? 'open' : ''}`}>
       <div class="card-header">
-        <button type="button" class="card-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => onToggle(entry.id)}>
+        <button
+          type="button"
+          class="card-toggle"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          aria-labelledby={`${bodyId}-title`}
+          aria-describedby={`${bodyId}-meta ${bodyId}-pills`}
+          onClick={() => onToggle(entry.id)}
+        >
           <Icon name="chevron" size={14} class="chevron" />
-          <EntrySummary entry={entry} reminderMonths={reminderMonths} />
+          <EntrySummary entry={entry} reminderMonths={reminderMonths} idPrefix={bodyId} />
         </button>
         {open && <EntryActions entry={entry} {...handlers} />}
       </div>

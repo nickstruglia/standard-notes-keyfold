@@ -189,7 +189,8 @@ const ExpiryPill = ({ entry }: { entry: Entry }) => {
   )
 }
 
-export const EntrySummary = ({ entry, reminderMonths }: { entry: Entry; reminderMonths: number }) => {
+/** idPrefix: ids for the title and details, so a button can be named by the title alone. */
+export const EntrySummary = ({ entry, reminderMonths, idPrefix }: { entry: Entry; reminderMonths: number; idPrefix?: string }) => {
   const meta = (
     isCrypto(entry.kind)
       ? [entry.chain, entry.wallet, entry.kind === 'mnemonic' ? `${entry.words.length} words` : '']
@@ -203,12 +204,16 @@ export const EntrySummary = ({ entry, reminderMonths }: { entry: Entry; reminder
         <Icon name={KIND_ICONS[entry.kind]} />
       </span>
       <span class="entry-main">
-        <span class="entry-title">
+        <span class="entry-title" id={idPrefix && `${idPrefix}-title`}>
           {entry.favorite && <Icon name="star" size={12} fill="currentColor" class="star" />}
           {entry.label || <em class="muted">Untitled {KIND_LABELS[entry.kind].toLowerCase()}</em>}
         </span>
-        {meta && <span class="entry-meta">{meta}</span>}
-        <span class="entry-pills">
+        {meta && (
+          <span class="entry-meta" id={idPrefix && `${idPrefix}-meta`}>
+            {meta}
+          </span>
+        )}
+        <span class="entry-pills" id={idPrefix && `${idPrefix}-pills`}>
           {entry.kind === 'mnemonic' && <ChecksumBadge entry={entry} />}
           {entry.passphrase && <span class="pill">+ passphrase</span>}
           {entry.archived && <span class="pill">archived</span>}

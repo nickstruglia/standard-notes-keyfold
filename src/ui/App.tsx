@@ -18,6 +18,7 @@ import {
   createEntry,
   emptyVault,
   isBackupDue,
+  isFromNewerVersion,
   parseNote,
   previewText,
   serializeEncrypted,
@@ -113,7 +114,9 @@ export const App = ({ host }: { host: Host }) => {
     setVaultState(data)
   }
 
-  const readOnly = noteLocked || phase.name !== 'ready'
+  // A vault with values only a newer Keyfold knows must not be saved by this one.
+  const fromNewer = isFromNewerVersion(vault)
+  const readOnly = noteLocked || fromNewer || phase.name !== 'ready'
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
   const noteLockedRef = useRef(noteLocked)
@@ -815,6 +818,12 @@ export const App = ({ host }: { host: Host }) => {
           <div class="banner banner-warn" role="note">
             <Icon name="alert" /> Demo mode: not connected to Standard Notes, nothing is saved. Do not type real secrets here.
             To install, add <code>{new URL('ext.json', location.href).href}</code> in Standard Notes → Preferences → Plugins.
+          </div>
+        )}
+        {fromNewer && phase.name === 'ready' && (
+          <div class="banner" role="note">
+            <Icon name="alert" /> This vault was saved by a newer version of Keyfold, so it is read-only here. Update the
+            plugin in Standard Notes (Preferences → Plugins) to edit it.
           </div>
         )}
         {noteLocked && phase.name === 'ready' && (

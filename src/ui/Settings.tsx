@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks'
+import { useId, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { useFocusOnMount, useUi } from './context'
 import type { VaultSettings } from '../lib/vault'
@@ -14,8 +14,16 @@ const Select = ({ value, options, format, onChange, disabled }: { value: number;
   </select>
 )
 
+/** Passwords guessed first; never "strong", whatever their characters. */
+const COMMON = new Set([
+  '1234567890', '12345678910', '0123456789', '1111111111', 'qwertyuiop', 'asdfghjkl;', 'password12', 'password123',
+  'password1!', 'password123!', 'iloveyou12', 'letmein123', 'welcome123', 'abcdefghij', 'qwerty1234', '1q2w3e4r5t',
+  'q1w2e3r4t5', 'zaq12wsxcde', 'passw0rd123', 'administrator', 'trustno1234', 'football123', 'baseball12',
+])
+
 /** Rough entropy estimate, only used to nudge toward longer passwords. */
 export const passwordStrength = (pw: string): { bits: number; label: string; tone: 'error' | 'warn' | 'ok' } => {
+  if (COMMON.has(pw.toLowerCase())) return { bits: 0, label: 'Very common', tone: 'error' }
   const pool =
     (/[a-z]/.test(pw) ? 26 : 0) + (/[A-Z]/.test(pw) ? 26 : 0) + (/[0-9]/.test(pw) ? 10 : 0) + (/[^a-zA-Z0-9]/.test(pw) ? 33 : 0)
   const unique = new Set(pw).size
@@ -42,13 +50,17 @@ const PasswordForm = ({ mode, onSubmit, onCancel }: PasswordFormProps) => {
   const [next, setNext] = useState('')
   const [confirmNext, setConfirmNext] = useState('')
   const [understood, setUnderstood] = useState(false)
+  const [weakOk, setWeakOk] = useState(false)
+  const ids = { strength: useId(), mismatch: useId() }
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const strength = passwordStrength(next)
+  const weak = strength.tone === 'error'
   const needsNew = mode !== 'remove'
+  const mismatch = confirmNext !== '' && confirmNext !== next
   const valid =
     (mode === 'set' || current.length > 0) &&
-    (!needsNew || (next.length >= MIN_LENGTH && next === confirmNext && understood))
+    (!needsNew || (next.length >= MIN_LENGTH && next === confirmNext && understood && (!weak || weakOk)))
 
   const submit = async (e: Event) => {
     e.preventDefault()
@@ -75,9 +87,17 @@ const PasswordForm = ({ mode, onSubmit, onCancel }: PasswordFormProps) => {
         <>
           <label class="field">
             <span class="field-label">New vault password</span>
-            <input class="input" type="password" autocomplete="new-password" value={next} onInput={(e) => setNext(e.currentTarget.value)} ref={nextRef} />
+            <input
+              class="input"
+              type="password"
+              autocomplete="new-password"
+              value={next}
+              onInput={(e) => setNext(e.currentTarget.value)}
+              ref={nextRef}
+              aria-describedby={next ? ids.strength : undefined}
+            />
             {next && (
-              <span class={`hint status-${strength.tone}`}>
+              <span id={ids.strength} class={`hint status-${strength.tone}`}>
                 {strength.label} (~{strength.bits} bits).{' '}
                 {next.length < MIN_LENGTH ? `Use at least ${MIN_LENGTH} characters. ` : ''}A phrase of 5+ random words works well.
               </span>
@@ -85,9 +105,35 @@ const PasswordForm = ({ mode, onSubmit, onCancel }: PasswordFormProps) => {
           </label>
           <label class="field">
             <span class="field-label">Repeat new password</span>
-            <input class="input" type="password" autocomplete="new-password" value={confirmNext} onInput={(e) => setConfirmNext(e.currentTarget.value)} />
-            {confirmNext && confirmNext !== next && <span class="hint status-error">Passwords do not match.</span>}
+            <input
+              class="input"
+              type="password"
+              autocomplete="new-password"
+              value={confirmNext}
+              onInput={(e) => setConfirmNext(e.currentTarget.value)}
+              aria-invalid={mismatch}
+              aria-describedby={mismatch ? ids.mismatch : undefined}
+            />
+            {mismatch && (
+              <span id={ids.mismatch} class="hint status-error" role="alert">
+                Passwords do not match.
+              </span>
+            )}
           </label>
+          {weak && next.length >= MIN_LENGTH && (
+            <label class="check">
+              <input type="checkbox" checked={weakOk} onChange={(e) => setWeakOk(e.currentTarget.checked)} />
+              <span>
+                Use this weak password anyway. Someone with access to your Standard Notes account could guess it quickly.
+              </span>
+            </label>
+          )}
+          {mode === 'change' && (
+            <p class="small status-warn">
+              <Icon name="alert" /> Older versions of this note in Standard Notes' note history still open with the old
+              password. If it leaked, delete those revisions too.
+            </p>
+          )}
           <label class="check">
             <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.currentTarget.checked)} />
             <span>I understand that if I forget this password, no one (not Standard Notes, not the developer) can recover the secrets in this note.</span>

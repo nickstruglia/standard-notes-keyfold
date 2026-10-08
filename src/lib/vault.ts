@@ -230,20 +230,52 @@ export const normalizeEntry = (raw: unknown): Entry => {
   }
 }
 
+const SETTING_CHOICES: Record<string, readonly string[]> = {
+  layout: ['stacked', 'split'],
+  density: ['comfortable', 'compact'],
+  groupBy: ['none', 'kind', 'chain', 'wallet', 'tag'],
+  sort: ['updated', 'label', 'created'],
+}
+
+const fromNewer = new WeakSet<VaultData>()
+
+/**
+ * True when the vault holds values this version does not know (an entry
+ * kind, a seed scheme, a setting): it was saved by a newer Keyfold. Such a
+ * vault opens read-only, because saving would replace those values with
+ * this version's defaults on every device.
+ */
+export const isFromNewerVersion = (vault: VaultData): boolean => fromNewer.has(vault)
+
+const hasUnknownValues = (o: Record<string, unknown>, s: Record<string, unknown>): boolean =>
+  arr(o.entries).some((raw) => {
+    const e = obj(raw)
+    return (
+      (e.kind !== undefined && !KINDS.includes(e.kind as EntryKind)) ||
+      (e.scheme !== undefined && !SCHEME_IDS.includes(e.scheme as MnemonicScheme))
+    )
+  }) || Object.entries(SETTING_CHOICES).some(([key, options]) => s[key] !== undefined && !options.includes(s[key] as string))
+
+/** A number setting within sane bounds (a hand-edited 3e9 would overflow timers). */
+const bounded = (v: unknown, fallback: number, max: number): number => {
+  const n = num(v, fallback)
+  return n > max ? fallback : n
+}
+
 export const normalizeVault = (raw: unknown): VaultData => {
   const o = obj(raw)
   const s = obj(o.settings)
-  return {
+  const vault: VaultData = {
     ...o,
     entries: arr(o.entries).map(normalizeEntry),
     settings: {
       ...s,
-      autoHideSeconds: num(s.autoHideSeconds, DEFAULT_SETTINGS.autoHideSeconds),
-      clipboardClearSeconds: num(s.clipboardClearSeconds, DEFAULT_SETTINGS.clipboardClearSeconds),
+      autoHideSeconds: bounded(s.autoHideSeconds, DEFAULT_SETTINGS.autoHideSeconds, 86_400),
+      clipboardClearSeconds: bounded(s.clipboardClearSeconds, DEFAULT_SETTINGS.clipboardClearSeconds, 86_400),
       hideOnBlur: bool(s.hideOnBlur, DEFAULT_SETTINGS.hideOnBlur),
       privacyScreen: bool(s.privacyScreen, DEFAULT_SETTINGS.privacyScreen),
-      autoLockMinutes: num(s.autoLockMinutes, DEFAULT_SETTINGS.autoLockMinutes),
-      backupReminderMonths: num(s.backupReminderMonths, DEFAULT_SETTINGS.backupReminderMonths),
+      autoLockMinutes: bounded(s.autoLockMinutes, DEFAULT_SETTINGS.autoLockMinutes, 10_080),
+      backupReminderMonths: bounded(s.backupReminderMonths, DEFAULT_SETTINGS.backupReminderMonths, 1_200),
       layout: oneOf(s.layout, ['stacked', 'split'], DEFAULT_SETTINGS.layout),
       density: oneOf(s.density, ['comfortable', 'compact'], DEFAULT_SETTINGS.density),
       singleExpand: bool(s.singleExpand, DEFAULT_SETTINGS.singleExpand),
@@ -251,6 +283,8 @@ export const normalizeVault = (raw: unknown): VaultData => {
       sort: oneOf(s.sort, ['updated', 'label', 'created'], DEFAULT_SETTINGS.sort),
     },
   }
+  if (hasUnknownValues(o, s)) fromNewer.add(vault)
+  return vault
 }
 
 export const MIN_ITERATIONS = 1_000

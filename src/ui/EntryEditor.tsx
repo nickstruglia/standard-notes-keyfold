@@ -66,12 +66,18 @@ export const EditorDatalists = () => (
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
+/**
+ * A labelled field. The hint sits outside the label, so screen readers read
+ * it as a description instead of making it part of the field's name.
+ */
 const Field = ({ label, hint, children, wide }: { label: string; hint?: ComponentChildren; children: ComponentChildren; wide?: boolean }) => (
-  <label class={`field ${wide ? 'field-wide' : ''}`}>
-    <span class="field-label">{label}</span>
-    {children}
+  <div class={`field ${wide ? 'field-wide' : ''}`}>
+    <label class="field-control">
+      <span class="field-label">{label}</span>
+      {children}
+    </label>
     {hint && <span class="hint">{hint}</span>}
-  </label>
+  </div>
 )
 
 interface SectionProps {
@@ -321,7 +327,7 @@ const PassphraseFields = ({ entry, update }: SectionArgs) => {
   return (
     <div class="row">
       <Field label={info.passphraseLabel} hint={info.passphraseHint}>
-        <SecretField label="Passphrase" value={entry.passphrase} onInput={(passphrase) => update({ passphrase })} placeholder="None" />
+        <SecretField label={info.passphraseLabel} value={entry.passphrase} onInput={(passphrase) => update({ passphrase })} placeholder="None" />
       </Field>
       <Field label="Passphrase hint" hint="Not hidden. Never write the passphrase itself here.">
         <input class="input" value={entry.passphraseHint} readOnly={readOnly} onInput={(e) => update({ passphraseHint: e.currentTarget.value })} {...EXACT_ATTRS} />
@@ -338,7 +344,7 @@ const KeySection = ({ entry, update }: SectionArgs) => {
   const format = useAsync(() => detectKeyFormat(entry.secret), [entry.secret])
   return (
     <Section id={`${entry.id}:key`} title={info.secretLabel} icon="key" summary={entry.secret ? format?.label ?? 'set' : 'empty'} defaultOpen>
-      <Field label={info.secret === 'token' ? 'Value' : 'Key'} wide>
+      <Field label={info.secretLabel} wide>
         <SecretField
           label={info.secretLabel}
           value={entry.secret}
@@ -773,7 +779,6 @@ export const EntryActions = ({ entry, onUpdate, onDelete, onDuplicate }: { entry
           <button
             type="button"
             class={`icon-button ${entry.archived ? 'active' : ''}`}
-            aria-pressed={entry.archived}
             aria-label={entry.archived ? 'Unarchive' : 'Archive'}
             title={entry.archived ? 'Unarchive' : 'Archive (e.g. an emptied or retired wallet)'}
             onClick={() => onUpdate({ archived: !entry.archived })}

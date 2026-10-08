@@ -51,12 +51,20 @@ window.addEventListener('message', (event) => {
       streamNote()
       break
     case 'save-items': {
+      // Like Standard Notes: a note with "Prevent editing" on refuses saves
+      // (it shows an alert and never replies).
+      if (state.note.content.appData['org.standardnotes.sn'].locked) {
+        state.rejectedSaves = (state.rejectedSaves ?? 0) + 1
+        break
+      }
       const item = message.data.items.find((i) => i.uuid === state.note.uuid)
       if (item) {
         state.note.content = { ...state.note.content, ...item.content }
         state.saves.push(item.content.text)
       }
       send({ action: 'reply', original: message, data: {} })
+      // Standard Notes streams the saved item back to the editor.
+      streamNote(true)
       render()
       break
     }
@@ -119,7 +127,7 @@ iframe.src = editorUrl
 document.getElementById('toggle-lock').onclick = () => {
   const appData = state.note.content.appData['org.standardnotes.sn']
   appData.locked = !appData.locked
-  streamNote(true)
+  streamNote()
 }
 document.getElementById('toggle-theme').onclick = async () => {
   state.theme = !state.theme

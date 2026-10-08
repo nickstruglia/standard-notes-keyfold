@@ -234,6 +234,10 @@ select.input {
   margin-bottom: 10px;
   min-width: 0;
 }
+/* The label element only groups the name with its control; layout comes from .field. */
+.field-control {
+  display: contents;
+}
 .field-label {
   font-size: 0.8rem;
   font-weight: 600;

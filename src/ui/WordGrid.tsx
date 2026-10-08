@@ -135,7 +135,7 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
   return (
     <div class="word-grid-wrap">
       <div class="word-toolbar">
-        <button type="button" class="button small" aria-pressed={revealed} onClick={() => setRevealed(!revealed)}>
+        <button type="button" class="button small" onClick={() => setRevealed(!revealed)}>
           <Icon name={revealed ? 'eyeOff' : 'eye'} /> {revealed ? 'Hide words' : 'Reveal words'}
         </button>
         <button
