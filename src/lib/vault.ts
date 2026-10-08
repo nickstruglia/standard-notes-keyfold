@@ -10,9 +10,20 @@ export type { EntryKind } from './kinds'
 
 export const APP_ID = 'keyfold'
 export const FORMAT_VERSION = 1
-export const README_NOTE =
+const README_INTRO =
   'Managed by the Keyfold editor for Standard Notes (https://github.com/nickstruglia/standard-notes-keyfold). ' +
-  'Edit this note with that editor so the JSON stays valid.'
+  'Open it with Keyfold; do not edit it as plain text or convert it to Super, which can damage the data. '
+
+/** Stored first in every note, so Standard Notes' 160-character preview never shows vault data. */
+export const README_NOTE =
+  README_INTRO +
+  'The vault below lists each entry with its label, kind and secret; seed phrase words are in order, and \\n in a value is a line break.'
+
+export const README_ENCRYPTED =
+  README_INTRO +
+  'The vault below is encrypted with your vault password: PBKDF2-SHA256 (password NFC-normalized, the salt and iteration count below) ' +
+  'gives an AES-256-GCM key; the IV is below, the ciphertext ends with the 16-byte tag, the associated data is ' +
+  '"keyfold|1|PBKDF2-SHA256|<iterations>|AES-256-GCM", and the plaintext is the vault as JSON.'
 
 export interface CustomField {
   id: string
@@ -302,7 +313,7 @@ export const serializePlain = (vault: VaultData): string =>
   JSON.stringify({ app: APP_ID, version: FORMAT_VERSION, readme: README_NOTE, vault }, null, 1)
 
 export const serializeEncrypted = (blob: EncryptedBlob): string =>
-  JSON.stringify({ app: APP_ID, version: FORMAT_VERSION, readme: README_NOTE, encryption: blob }, null, 1)
+  JSON.stringify({ app: APP_ID, version: FORMAT_VERSION, readme: README_ENCRYPTED, encryption: blob }, null, 1)
 
 /** Note-list preview. Never includes labels or secret material. */
 export const previewText = (vault: VaultData | null): string => {
@@ -318,7 +329,7 @@ export const previewText = (vault: VaultData | null): string => {
 
 /** Most recent backup check for an entry, or '' when none was recorded. */
 export const lastVerified = (entry: Entry): string =>
-  entry.backups.map((b) => b.verifiedOn).filter(Boolean).sort().at(-1) ?? ''
+  (entry.backups.map((b) => b.verifiedOn).filter(Boolean).sort().pop() ?? '')
 
 export const isBackupDue = (entry: Entry, months: number, now = new Date()): boolean => {
   if (months <= 0 || entry.archived || !KIND_INFO[entry.kind].backupReminders) return false

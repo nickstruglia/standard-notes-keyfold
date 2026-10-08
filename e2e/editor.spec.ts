@@ -346,6 +346,27 @@ test('editing an imported multi-line field keeps its line breaks', async ({ page
   await expect.poll(async () => (await noteJson(page))?.vault?.entries[0]?.customFields?.[0]?.value).toBe('backup\nabandon\nthird line!')
 })
 
+test('a theme stylesheet cannot load images or fonts from other sites', async ({ page }) => {
+  const requested: string[] = []
+  await page.route('https://evil.test/**', (route) => {
+    requested.push(route.request().url())
+    const css = `body { background-image: url(https://evil.test/beacon.png) }
+      @font-face { font-family: x; src: url(https://evil.test/font.woff) } body { font-family: x }`
+    return route.fulfill({ body: css, contentType: 'text/css' })
+  })
+  const { app } = await open(page)
+  await expect(app.getByText('No keys yet.')).toBeVisible()
+  await page.evaluate(() =>
+    (document.getElementById('editor') as HTMLIFrameElement).contentWindow!.postMessage(
+      { action: 'themes', data: { themes: ['https://evil.test/theme.css'] } },
+      '*',
+    ),
+  )
+  await expect.poll(() => requested.length).toBeGreaterThan(0)
+  await page.waitForTimeout(500)
+  expect(requested).toEqual(['https://evil.test/theme.css'])
+})
+
 test('demo mode when opened directly', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText(/Demo mode/)).toBeVisible()

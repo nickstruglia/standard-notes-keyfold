@@ -487,7 +487,7 @@ export const App = ({ host }: { host: Host }) => {
     if (!source) return
     const now = new Date().toISOString()
     const copyOf: Entry = {
-      ...structuredClone(source),
+      ...(JSON.parse(JSON.stringify(source)) as Entry),
       id: newId(),
       label: source.label ? `${source.label} (copy)` : '',
       addedAt: now,

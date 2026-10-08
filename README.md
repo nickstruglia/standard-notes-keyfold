@@ -67,9 +67,17 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 
 Open the URL above without `ext.json` to try a demo in your browser (sample data only, nothing is saved).
 
+**Moving to a new address or your own fork.** Standard Notes keeps using the first copy of Keyfold you installed, even if you install another, so:
+
+1. In **Preferences → Plugins**, uninstall the old Keyfold.
+2. Right away, before opening any Keyfold note, install the new `ext.json` URL. On desktop, restart the app afterwards.
+3. Your notes open in the new copy: they are linked to the plugin's identifier, which never changes.
+
+If a Keyfold note opens in another editor in between (for example an empty Authenticator list), do not add anything there: reinstall Keyfold, and use **Note history** to restore the note if something was saved. Notes created before October 2026 may still open in Authenticator when Keyfold is missing, because Standard Notes stored that note type with each note.
+
 ## Mobile
 
-The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so Keyfold needs an internet connection on a phone (the desktop app can keep an offline copy). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
+The Standard Notes iOS and Android apps run plugins in the same sandboxed frame as the web app, loaded from the plugin's URL, so Keyfold needs an internet connection on a phone. The desktop app keeps an offline copy and updates it whenever a newer version is published (each deploy has its own version number). The layout, touch targets and keyboard handling are built for phones, and every browser test runs at Android and iPhone screen sizes with touch enabled. On touch screens, seed words stay masked while you type them unless you tap **Reveal words**.
 
 The phone apps send Standard Notes' built-in themes to plugins as embedded stylesheets (`data:` URLs), which Keyfold accepts. Until those are ready they send a link to the app's local theme file, which a plugin loaded from the web cannot open, so Keyfold loads the same theme from Standard Notes' web app (`app.standardnotes.com`) instead.
 
@@ -79,7 +87,8 @@ Tested in the Standard Notes Android app. Not yet verified on an iPhone (Safari'
 
 Read these before storing keys that protect real funds or systems:
 
-- **Who you trust.** Standard Notes loads Keyfold from the URL in `ext.json` every time you open the note, so whoever controls that site controls the code that sees your secrets. If you are not the maintainer, fork this repository and install from your own GitHub Pages URL (see below).
+- **Who you trust.** Standard Notes loads Keyfold from the URL in `ext.json` (web and phones load it every time; desktop downloads each new version), so whoever controls that site controls the code that sees your secrets. If you are not the maintainer, fork this repository and install from your own GitHub Pages URL (see below). Settings → About shows which site your copy comes from.
+- **Exports and backups.** Standard Notes' exports, decrypted backups and the desktop app's optional plaintext backups contain your vault as plain JSON unless you set a vault password.
 - **Your device.** A compromised computer, malicious browser extension or keylogger can read anything you type or reveal. For large amounts, keep keys on a hardware wallet and treat Keyfold as an encrypted record, not your only backup.
 - **Note history.** Standard Notes keeps earlier versions of a note. If you add a vault password after entering secrets, older revisions still hold the data without that extra layer (Standard Notes' own encryption still protects them). Set the password on a new vault before adding secrets, or delete the old revisions.
 - **Clipboard.** Clipboard clearing is best effort. Clipboard history tools (Windows Win+V, clipboard managers, universal clipboard) and phone keyboards (Gboard, Samsung Keyboard) keep their own copies, which no web page can delete. On a phone, delete the entry from the keyboard's clipboard panel, or turn its clipboard history off.
@@ -104,6 +113,33 @@ With a vault password, `vault` is replaced by an encrypted blob:
 
 The preview in Standard Notes' note list contains only counts (for example "Keyfold: 2 seed phrases, 1 SSH key"), never labels or secrets.
 
+## Recovering your data without Keyfold
+
+If Keyfold does not open (offline phone, plugin removed, site down), open the note menu and change the note type to **Plain text** to read the JSON. Do not edit it there, and never convert it to **Super**: Super's import collapses spaces and drops text after a `<`. If you did, restore the note from **Note history**.
+
+A plain vault is readable as is: each entry has its `label`, `kind`, `words` (in order) or `secret`, and `\n` in a value is a line break.
+
+An encrypted vault can be decrypted with any WebCrypto implementation. This script runs in Node.js 20+ or in the console of any https page (not `about:blank`):
+
+```js
+const noteText = `...paste the whole note text here...`
+const password = '...your vault password...'
+
+const { encryption: e } = JSON.parse(noteText)
+const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+const enc = new TextEncoder()
+const material = await crypto.subtle.importKey('raw', enc.encode(password.normalize('NFC')), 'PBKDF2', false, ['deriveKey'])
+const key = await crypto.subtle.deriveKey(
+  { name: 'PBKDF2', hash: 'SHA-256', salt: bytes(e.salt), iterations: e.iterations },
+  material, { name: 'AES-GCM', length: 256 }, false, ['decrypt'])
+const plain = await crypto.subtle.decrypt(
+  { name: 'AES-GCM', iv: bytes(e.iv), additionalData: enc.encode(`keyfold|1|PBKDF2-SHA256|${e.iterations}|AES-256-GCM`) },
+  key, bytes(e.ciphertext))
+console.log(JSON.parse(new TextDecoder().decode(plain)))
+```
+
+The format: PBKDF2-SHA256 over the NFC-normalized password with the stored salt and iteration count gives an AES-256-GCM key; the 12-byte IV is stored, the ciphertext ends with the 16-byte tag, the associated data is `keyfold|1|PBKDF2-SHA256|<iterations>|AES-256-GCM`, and the plaintext is the vault as JSON.
+
 ## Development
 
 Requires Node.js 22.
@@ -124,9 +160,9 @@ npm run test:e2e   # Playwright tests against the production build, on desktop a
 1. Fork this repository.
 2. In the fork, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
 3. Run the **Deploy to GitHub Pages** workflow (Actions tab), or push to the default branch.
-4. Install `https://<your-username>.github.io/standard-notes-keyfold/ext.json` in Standard Notes.
+4. Uninstall any other Keyfold first (see "Moving to a new address" above), then install `https://<your-username>.github.io/standard-notes-keyfold/ext.json` in Standard Notes.
 
-The workflow writes your Pages URL into `ext.json` and publishes `keyfold.zip` for the desktop app's offline mode.
+The workflow runs the tests, writes your Pages URL into `ext.json` and the Content Security Policy, names the plugin "Keyfold (<your-username>)" so it is easy to tell apart, and publishes `keyfold.zip` for the desktop app's offline mode. Building elsewhere? Set `SITE_URL` to the address you will serve it from, or the policy will not let the script load.
 
 ## License
 

@@ -137,3 +137,14 @@ describe('stored format', () => {
     expect(parsed.kind === 'plain' && parsed.vault.entries[0].customFields[0]).toMatchObject({ value: 'line 1\nline 2', multiline: true })
   })
 })
+
+describe('note preview safety', () => {
+  it('puts at least 160 characters before any vault data', async () => {
+    // Standard Notes previews the first 160 characters of a note's text.
+    const plain = serializePlain(emptyVault())
+    expect(plain.indexOf('"vault"')).toBeGreaterThan(160)
+    const key = await deriveKey('pw', undefined, 1000)
+    const encrypted = serializeEncrypted(await encryptVault(emptyVault(), key))
+    expect(encrypted.indexOf('"encryption"')).toBeGreaterThan(160)
+  })
+})

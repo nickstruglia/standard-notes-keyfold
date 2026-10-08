@@ -245,11 +245,12 @@ export const Settings = ({ settings, hasPassword, onChange, onSetPassword, onCha
         <section class="section">
           <h3>About</h3>
           <p class="small">
-            Keyfold {__APP_VERSION__}. Open source (MIT):{' '}
-            <a href="https://github.com/nickstruglia/standard-notes-keyfold" target="_blank" rel="noopener noreferrer">
-              github.com/nickstruglia/standard-notes-keyfold
+            Keyfold {__APP_VERSION__}, from {__SITE_URL__}. Open source (MIT):{' '}
+            <a href={__REPO_URL__} target="_blank" rel="noopener noreferrer">
+              {__REPO_URL__.replace('https://', '')}
             </a>
-            . The editor makes no network requests; its Content Security Policy blocks them.
+            . Its Content Security Policy blocks all outgoing connections, images and fonts from other sites; only your
+            Standard Notes theme's stylesheets load.
           </p>
         </section>
       </div>
