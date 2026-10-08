@@ -164,6 +164,12 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
               </span>
               <input
                 ref={(el) => {
+                  // A field first created while words are revealed starts as a
+                  // password field for a moment, so the keyboard treats it as one.
+                  if (el && !refs.current[i] && el.type === 'text') {
+                    el.type = 'password'
+                    el.type = 'text'
+                  }
                   refs.current[i] = el
                 }}
                 class="input mono"

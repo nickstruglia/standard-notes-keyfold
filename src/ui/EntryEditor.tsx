@@ -70,13 +70,26 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * A labelled field. The hint sits outside the label, so screen readers read
  * it as a description instead of making it part of the field's name.
  */
-const Field = ({ label, hint, children, wide }: { label: string; hint?: ComponentChildren; children: ComponentChildren; wide?: boolean }) => (
+const Field = ({
+  label,
+  hint,
+  children,
+  wide,
+  safety,
+}: {
+  label: string
+  hint?: ComponentChildren
+  children: ComponentChildren
+  wide?: boolean
+  /** The hint is a safety warning: shown even in compact density. */
+  safety?: boolean
+}) => (
   <div class={`field ${wide ? 'field-wide' : ''}`}>
     <label class="field-control">
       <span class="field-label">{label}</span>
       {children}
     </label>
-    {hint && <span class="hint">{hint}</span>}
+    {hint && <span class={`hint ${safety ? 'hint-safety' : ''}`}>{hint}</span>}
   </div>
 )
 
@@ -176,6 +189,11 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
           data-secret={undefined}
         />
       </Field>
+      {leaksSecret(entry, entry.description) && (
+        <p class="status status-error" role="status">
+          <Icon name="alert" /> This text repeats the entry's secret, and it is not hidden.
+        </p>
+      )}
       <div class="row">
         {crypto ? (
           <>
@@ -319,6 +337,22 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
   )
 }
 
+/** True when the visible hint gives the hidden passphrase away. */
+const hintGivesAway = (entry: Entry) =>
+  entry.passphrase.length >= 4 && entry.passphraseHint.toLowerCase().includes(entry.passphrase.toLowerCase())
+
+/** Visible text that repeats the entry's own secret (the key, or 4+ consecutive seed words). */
+const leaksSecret = (entry: Entry, text: string) => {
+  const t = text.toLowerCase()
+  if (!t) return false
+  if (entry.secret.trim().length >= 12 && t.includes(entry.secret.trim().toLowerCase())) return true
+  const words = entry.words.filter(Boolean).map((w) => w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  for (let i = 0; i + 4 <= words.length; i++) {
+    if (new RegExp(`\\b${words.slice(i, i + 4).join('\\s+')}\\b`).test(t)) return true
+  }
+  return false
+}
+
 /** Passphrase (hidden) plus a visible hint, for kinds that have one. */
 const PassphraseFields = ({ entry, update }: SectionArgs) => {
   const { readOnly } = useUi()
@@ -326,12 +360,17 @@ const PassphraseFields = ({ entry, update }: SectionArgs) => {
   if (!info.passphraseLabel) return null
   return (
     <div class="row">
-      <Field label={info.passphraseLabel} hint={info.passphraseHint}>
+      <Field label={info.passphraseLabel} hint={info.passphraseHint} safety>
         <SecretField label={info.passphraseLabel} value={entry.passphrase} onInput={(passphrase) => update({ passphrase })} placeholder="None" />
       </Field>
-      <Field label="Passphrase hint" hint="Not hidden. Never write the passphrase itself here.">
+      <Field label="Passphrase hint" hint="Not hidden. Never write the passphrase itself here." safety>
         <input class="input" value={entry.passphraseHint} readOnly={readOnly} onInput={(e) => update({ passphraseHint: e.currentTarget.value })} {...EXACT_ATTRS} />
       </Field>
+      {hintGivesAway(entry) && (
+        <p class="status status-error field-wide" role="status">
+          <Icon name="alert" /> The hint contains the passphrase. Anyone who opens this note can read it.
+        </p>
+      )}
     </div>
   )
 }
@@ -350,7 +389,10 @@ const KeySection = ({ entry, update }: SectionArgs) => {
           value={entry.secret}
           onInput={(secret) => update({ secret })}
           placeholder={info.secretPlaceholder}
-          multiline={info.secret === 'key'}
+          // A one-line wallet key stays in a masked password field; a pasted
+          // multi-line key (keystore JSON, PEM) switches to the multi-line control.
+          multiline={info.secret === 'key' && (entry.kind !== 'privateKey' || entry.secret.includes('\n'))}
+          onMultilinePaste={(secret) => update({ secret })}
           mono
         />
       </Field>
@@ -709,6 +751,11 @@ const NotesSection = ({ entry, update }: SectionArgs) => {
         onInput={(e) => update({ notes: e.currentTarget.value })}
         {...SECRET_ATTRS}
       />
+      {leaksSecret(entry, entry.notes) && (
+        <p class="status status-error" role="status">
+          <Icon name="alert" /> This text repeats the entry's secret, and it is not hidden.
+        </p>
+      )}
     </Section>
   )
 }

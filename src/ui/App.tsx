@@ -412,14 +412,20 @@ export const App = ({ host }: { host: Host }) => {
       }
       // Inside Standard Notes the browser only allows clipboard writes during
       // a click or tap, so clear on the next one (or the button).
+      // Click, or the end of a tap: iOS does not fire click on plain elements.
+      const triggers = ['click', 'touchend', 'pointerup'] as const
+      let done = false
+      const stop = () => triggers.forEach((t) => window.removeEventListener(t, clearOnce, true))
       const clearOnce = () => {
-        if (id !== copySeq.current) return window.removeEventListener('click', clearOnce, true)
+        if (done) return
+        if (id !== copySeq.current) return stop()
         if (clearClipboardNow()) {
-          window.removeEventListener('click', clearOnce, true)
+          done = true
+          stop()
           cleared()
         }
       }
-      window.addEventListener('click', clearOnce, true)
+      triggers.forEach((t) => window.addEventListener(t, clearOnce, true))
       const blockedToast = toast('Waiting for a click or tap to clear the clipboard.', 'info', { label: 'Clear now', run: clearOnce }, 20000)
       if (pendingClear.current?.id === id) pendingClear.current.blockedToast = blockedToast
     }, secs * 1000)
@@ -833,10 +839,18 @@ export const App = ({ host }: { host: Host }) => {
         )}
         {body}
         {settings.privacyScreen && !focused && phase.name === 'ready' && (
-          <div class="privacy-cover" aria-hidden="true">
+          // A real button: iOS only turns a tap into a click on elements that handle one.
+          <button
+            type="button"
+            class="privacy-cover"
+            onClick={() => {
+              window.focus()
+              setFocused(true)
+            }}
+          >
             <Icon name="eyeOff" size={28} />
-            <span>Click to show the vault</span>
-          </div>
+            <span>{isTouchDevice() ? 'Tap to show the vault' : 'Click to show the vault'}</span>
+          </button>
         )}
       </div>
       {EDITOR_DATALISTS}

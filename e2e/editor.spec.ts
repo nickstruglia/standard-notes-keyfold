@@ -169,9 +169,8 @@ test('reveals, copies with a toast, and hides all', async ({ page }) => {
 test('detects private key formats', async ({ page }) => {
   const { app } = await open(page)
   await add(app, 'Wallet key')
-  // The key stays hidden (not even in the page) until revealed; clicking it reveals and focuses it.
-  await app.getByRole('button', { name: /Private key \(hidden\)/ }).click()
-  await expect(app.getByLabel('Private key', { exact: true })).toBeFocused()
+  // A one-line wallet key is typed into a masked password field.
+  await expect(app.getByLabel('Private key', { exact: true })).toHaveAttribute('type', 'password')
   await app.getByLabel('Private key', { exact: true }).fill('KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98617')
   await expect(app.getByText('WIF private key (Bitcoin mainnet, compressed)')).toBeVisible()
   await app.getByLabel('Private key', { exact: true }).fill('KwdMAjGmerYanjeui5SHS7JkmpZvVipYvB2LJGU1ZxJwYvP98618')
@@ -427,6 +426,33 @@ test('on a 320 px phone the Add menu stays on screen', async ({ page }) => {
   expect(box.x).toBeGreaterThanOrEqual(frame.x)
   expect(box.x + box.width).toBeLessThanOrEqual(frame.x + frame.width)
   expect(box.y + box.height).toBeLessThanOrEqual(frame.y + frame.height)
+})
+
+test('warns when visible text gives a secret away', async ({ page }) => {
+  const { app } = await open(page, vaultText([{ ...SEEDS[0], passphrase: 'tangerine' }]))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByLabel('Passphrase hint').fill('my Tangerine')
+  await expect(app.getByText('The hint contains the passphrase.', { exact: false })).toBeVisible()
+  await app.getByRole('button', { name: /Notes/ }).click()
+  await app.getByLabel('Notes').fill('backup: abandon abandon abandon abandon')
+  await expect(app.getByText(/This text repeats the entry's secret/)).toBeVisible()
+})
+
+test('a one-line wallet key stays in a masked field', async ({ page }) => {
+  const { app } = await open(page)
+  await add(app, 'Wallet key')
+  await expect(app.getByLabel('Private key', { exact: true })).toHaveAttribute('type', 'password')
+})
+
+test('the privacy screen is a button that brings the vault back', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]], { privacyScreen: true }))
+  await expect(app.getByText('Cold storage')).toBeVisible()
+  // Focus leaves the editor (the host page takes it).
+  await page.locator('#reset').focus()
+  const cover = app.getByRole('button', { name: /to show the vault/ })
+  await expect(cover).toBeVisible()
+  await cover.click()
+  await expect(cover).toHaveCount(0)
 })
 
 test('demo mode when opened directly', async ({ page }) => {

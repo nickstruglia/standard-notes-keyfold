@@ -325,7 +325,9 @@ const isBlob = (v: unknown): v is EncryptedBlob => {
 }
 
 /** Classifies the note text. Never throws; unknown text is reported as foreign. */
-export const parseNote = (text: string | undefined | null): ParsedNote => {
+export const parseNote = (input: string | undefined | null): ParsedNote => {
+  // A byte-order mark (from some editors or APIs) would make valid JSON fail to parse.
+  const text = input?.replace(/^\uFEFF/, '')
   if (!text || !text.trim()) return { kind: 'empty' }
   let doc: unknown
   try {

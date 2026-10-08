@@ -167,3 +167,10 @@ describe('forward compatibility', () => {
     expect(parsed.kind === 'plain' && parsed.vault.settings.autoHideSeconds).toBe(30)
   })
 })
+
+describe('odd note text', () => {
+  it('reads a vault that starts with a byte-order mark', () => {
+    const text = '﻿' + JSON.stringify({ app: APP_ID, version: 1, vault: { entries: [] } })
+    expect(parseNote(text).kind).toBe('plain')
+  })
+})
