@@ -536,11 +536,16 @@ export const App = ({ host }: { host: Host }) => {
     reveal(entry.id)
   }
 
-  const updateEntry = (id: string, patch: Partial<Entry>) =>
-    update((v) => ({
+  const updateEntry = (id: string, patch: Partial<Entry>) => {
+    const applied = update((v) => ({
       ...v,
       entries: v.entries.map((e) => (e.id === id ? { ...e, ...patch, updatedAt: new Date().toISOString() } : e)),
     }))
+    // Archiving hides the entry from the usual filters: say where it went.
+    if (applied && patch.archived === true) {
+      toast('Archived. It is under the "Archived" filter.', 'info', { label: 'Undo', run: () => updateEntry(id, { archived: false }) }, 6000)
+    }
+  }
 
   const duplicateEntry = (id: string) => {
     const source = vaultRef.current.entries.find((e) => e.id === id)
@@ -683,7 +688,17 @@ export const App = ({ host }: { host: Host }) => {
       )}
     </div>
   )
-  const noMatches = <p class="empty small muted">No entries match.</p>
+  const allArchived = vault.entries.length > 0 && vault.entries.every((e) => e.archived) && filter !== 'archived'
+  const noMatches = allArchived ? (
+    <p class="empty small muted">
+      Every entry is archived.{' '}
+      <button type="button" class="link-button" onClick={() => setFilter('archived')}>
+        Show archived entries
+      </button>
+    </p>
+  ) : (
+    <p class="empty small muted">No entries match.</p>
+  )
 
   let body
   switch (phase.name) {
@@ -711,7 +726,8 @@ export const App = ({ host }: { host: Host }) => {
           onFilter={setFilter}
           dueCount={dueCount}
           shown={entries.length}
-          total={vault.entries.length}
+          // Archived entries only count in the Archived filter.
+          total={vault.entries.filter((e) => (filter === 'archived' ? e.archived : !e.archived)).length}
           readOnly={readOnly}
           onAdd={addEntry}
           view={viewPrefs}

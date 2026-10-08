@@ -16,6 +16,8 @@ const legacyCopy = (text: string): boolean => {
   area.style.opacity = '0'
   document.body.appendChild(area)
   area.select()
+  // Older iOS versions only select the full range with this.
+  area.setSelectionRange(0, text.length)
   let ok = false
   try {
     ok = document.execCommand('copy')

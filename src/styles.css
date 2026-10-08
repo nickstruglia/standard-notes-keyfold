@@ -258,7 +258,9 @@ select.input {
 }
 .status svg {
   flex: none;
-  align-self: center;
+  /* Level with the first line, also when the message wraps. */
+  align-self: flex-start;
+  margin-top: 0.2em;
 }
 .status-ok {
   color: var(--success-text);
@@ -490,6 +492,12 @@ select.input {
   font-size: 0.72rem;
   border-radius: 999px;
   background: var(--contrast);
+}
+.toolbar .count {
+  /* The entry count is plain text, not a pill. */
+  padding: 0;
+  font-size: 0.8rem;
+  background: none;
 }
 .chevron {
   flex: none;
@@ -733,7 +741,8 @@ select.input {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 2px 0;
+  /* Room between the chevron and the focus ring. */
+  padding: 2px 4px;
   font: inherit;
   font-weight: 600;
   text-align: left;
@@ -1220,6 +1229,51 @@ select.input {
   }
   .title-input:hover {
     border-color: var(--border);
+  }
+}
+
+/* iOS date fields: native controls centre their text; match the other fields. */
+.input::-webkit-date-and-time-value {
+  text-align: start;
+}
+
+/* Windows High Contrast: colors are replaced, so status needs borders. */
+@media (forced-colors: active) {
+  .pill,
+  .status-error,
+  .entry-item.selected,
+  .word-invalid .input {
+    border: 1px solid CanvasText;
+  }
+  .entry-item.selected {
+    border-color: Highlight;
+  }
+  .word-invalid .input {
+    border-width: 2px;
+  }
+}
+
+/* Safari before 16.2 has no color-mix(): plain colors instead. (Separate
+   fallback declarations do not work, because any declaration using var()
+   wins even where color-mix is unsupported.) */
+@supports not (color: color-mix(in srgb, red, red)) {
+  :root {
+    --keys: var(--info);
+    --success-text: var(--success);
+    --warning-text: var(--fg);
+    --danger-text: var(--danger);
+  }
+  .pill-ok,
+  .pill-error,
+  .pill-warn,
+  .badge,
+  [class*='badge-'],
+  .entry-item.selected,
+  .word-invalid .input {
+    background: var(--contrast);
+  }
+  .pill-warn {
+    color: var(--fg);
   }
 }
 

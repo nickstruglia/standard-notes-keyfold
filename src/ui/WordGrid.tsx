@@ -151,7 +151,9 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
         >
           <Icon name="copy" /> Copy phrase
         </button>
-        <span class="muted small helper">Tip: paste a whole phrase into word 1.</span>
+        <span class="muted small helper">
+          Tip: paste a whole phrase into word 1.{isTouchDevice() ? ' Phrases in other scripts (Japanese, Chinese…) can only be pasted on phones.' : ''}
+        </span>
       </div>
       <ol class="word-grid" aria-label="Seed words">
         {words.map((word, i) => {

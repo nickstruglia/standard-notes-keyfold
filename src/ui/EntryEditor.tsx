@@ -3,7 +3,7 @@ import type { ComponentChildren } from 'preact'
 import { Icon, type IconName } from './icons'
 import { SecretField } from './Secret'
 import { WordGrid } from './WordGrid'
-import { KIND_LABELS } from './labels'
+import { KIND_LABELS, untitled } from './labels'
 import { EXACT_ATTRS, SECRET_ATTRS, useAsync, useSection, useUi } from './context'
 import { COMMON_WORD_COUNTS, MAX_WORDS, SCHEMES, type MnemonicScheme, checkMnemonic } from '../lib/mnemonic'
 import { detectKeyFormat, findPrivateMaterial } from '../lib/keyformat'
@@ -171,7 +171,7 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
             ref={labelRef}
             class="input"
             value={entry.label}
-            placeholder={`Untitled ${KIND_LABELS[entry.kind].toLowerCase()}`}
+            placeholder={untitled(KIND_LABELS[entry.kind])}
             readOnly={readOnly}
             onInput={(e) => update({ label: e.currentTarget.value })}
           />
@@ -336,6 +336,10 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
     </Section>
   )
 }
+
+/** Puts the cursor in a row that was just added, once it is on the page. */
+const focusRow = (id: string) =>
+  setTimeout(() => document.querySelector<HTMLInputElement>(`[data-row="${id}"] input`)?.focus())
 
 /** True when the visible hint gives the hidden passphrase away. */
 const hintGivesAway = (entry: Entry) =>
@@ -586,7 +590,18 @@ const BackupsSection = ({ entry, update, reminderMonths }: SectionArgs & { remin
       icon="shield"
       summary={summary}
       defaultOpen={false}
-      action={readOnly ? undefined : { label: 'Add location', onClick: () => update({ backups: [...entry.backups, { id: newId(), location: '', verifiedOn: '' }] }) }}
+      action={
+        readOnly
+          ? undefined
+          : {
+              label: 'Add location',
+              onClick: () => {
+                const id = newId()
+                update({ backups: [...entry.backups, { id, location: '', verifiedOn: '' }] })
+                focusRow(id)
+              },
+            }
+      }
     >
       <p class={`status ${due ? 'status-warn' : 'status-info'}`}>
         <Icon name={due ? 'alert' : 'check'} /> {last ? `Last checked ${last}.` : 'No backup check recorded.'}
@@ -596,7 +611,7 @@ const BackupsSection = ({ entry, update, reminderMonths }: SectionArgs & { remin
         <p class="muted small helper">Record where copies are kept, like "steel plate in home safe". Do not record the secret itself here.</p>
       )}
       {entry.backups.map((b) => (
-        <div class="row backup-row" key={b.id}>
+        <div class="row backup-row" key={b.id} data-row={b.id}>
           <input
             class="input grow"
             value={b.location}
@@ -651,14 +666,21 @@ const CustomFieldsSection = ({ entry, update }: SectionArgs) => {
       action={
         readOnly
           ? undefined
-          : { label: 'Add field', onClick: () => update({ customFields: [...entry.customFields, { id: newId(), label: '', value: '', hidden: true }] }) }
+          : {
+              label: 'Add field',
+              onClick: () => {
+                const id = newId()
+                update({ customFields: [...entry.customFields, { id, label: '', value: '', hidden: true }] })
+                focusRow(id)
+              },
+            }
       }
     >
       {entry.customFields.length === 0 && (
         <p class="muted small helper">For PINs, keystore passwords, 2FA backup codes, multisig details or anything else.</p>
       )}
       {entry.customFields.map((f) => (
-        <div class="custom-field" key={f.id}>
+        <div class="custom-field" key={f.id} data-row={f.id}>
           <input
             class="input custom-label"
             value={f.label}
@@ -808,6 +830,8 @@ export interface EntryHandlers {
 /** Favorite, duplicate, archive and delete buttons. */
 export const EntryActions = ({ entry, onUpdate, onDelete, onDuplicate }: { entry: Entry } & EntryHandlers) => {
   const { readOnly } = useUi()
+  // Read-only, every action is disabled: show none rather than a row of greyed-out buttons.
+  if (readOnly) return null
   return (
     <div class="entry-actions">
       <button
@@ -905,7 +929,7 @@ export const EntryEditor = ({ entry, reminderMonths, onUpdate, onDelete, onDupli
           ref={labelRef}
           class="input title-input"
           value={entry.label}
-          placeholder={`Untitled ${KIND_LABELS[entry.kind].toLowerCase()}`}
+          placeholder={untitled(KIND_LABELS[entry.kind])}
           aria-label="Label"
           readOnly={readOnly}
           onInput={(e) => !readOnly && onUpdate({ label: e.currentTarget.value })}

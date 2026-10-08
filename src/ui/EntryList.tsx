@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact'
 import { Icon } from './icons'
-import { KIND_GROUP_LABELS, KIND_ICONS, KIND_LABELS } from './labels'
+import { KIND_GROUP_LABELS, KIND_ICONS, KIND_LABELS, untitled } from './labels'
 import { useAsync } from './context'
 import { checkMnemonic } from '../lib/mnemonic'
 import { KINDS, isCrypto } from '../lib/kinds'
@@ -18,6 +18,9 @@ export const FILTERS: [Filter, string][] = [
   ['archived', 'Archived'],
 ]
 
+/** Sorts "Wallet 2" before "Wallet 10". */
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
 /** Searches labels and public details only, never secret values. */
 const matches = (entry: Entry, query: string): boolean => {
   if (!query) return true
@@ -33,6 +36,9 @@ const matches = (entry: Entry, query: string): boolean => {
     entry.fingerprint,
     entry.publicInfo,
     ...entry.tags,
+    // Public parts of custom fields and backups; hidden values are never searched.
+    ...entry.customFields.flatMap((f) => (f.hidden ? [f.label] : [f.label, f.value])),
+    ...entry.backups.map((b) => b.location),
   ]
     .join(' ')
     .toLowerCase()
@@ -68,7 +74,7 @@ export const visibleEntries = (entries: Entry[], filter: Filter, sort: SortOrder
       if (sort === 'label') {
         // Untitled entries go last.
         if (!a.label !== !b.label) return a.label ? -1 : 1
-        return a.label.localeCompare(b.label)
+        return collator.compare(a.label, b.label)
       }
       if (sort === 'created') return (b.createdOn || '').localeCompare(a.createdOn || '')
       return b.updatedAt.localeCompare(a.updatedAt)
@@ -119,7 +125,7 @@ export const groupEntries = (entries: Entry[], groupBy: GroupBy): EntryGroup[] =
     return list.sort((a, b) => KIND_ORDER.indexOf(a.entries[0].kind) - KIND_ORDER.indexOf(b.entries[0].kind))
   }
   const isEmpty = (g: EntryGroup) => g.key.endsWith(':')
-  return list.sort((a, b) => Number(isEmpty(a)) - Number(isEmpty(b)) || a.label.localeCompare(b.label))
+  return list.sort((a, b) => Number(isEmpty(a)) - Number(isEmpty(b)) || collator.compare(a.label, b.label))
 }
 
 /** Where each entry sits in the displayed list. */
@@ -206,7 +212,7 @@ export const EntrySummary = ({ entry, reminderMonths, idPrefix }: { entry: Entry
       <span class="entry-main">
         <span class="entry-title" id={idPrefix && `${idPrefix}-title`}>
           {entry.favorite && <Icon name="star" size={12} fill="currentColor" class="star" />}
-          {entry.label || <em class="muted">Untitled {KIND_LABELS[entry.kind].toLowerCase()}</em>}
+          {entry.label || <em class="muted">{untitled(KIND_LABELS[entry.kind])}</em>}
         </span>
         {meta && (
           <span class="entry-meta" id={idPrefix && `${idPrefix}-meta`}>
@@ -218,7 +224,9 @@ export const EntrySummary = ({ entry, reminderMonths, idPrefix }: { entry: Entry
           {entry.passphrase && <span class="pill">+ passphrase</span>}
           {entry.archived && <span class="pill">archived</span>}
           <ExpiryPill entry={entry} />
-          {isBackupDue(entry, reminderMonths) && <span class="pill pill-warn">backup check due</span>}
+          {isBackupDue(entry, reminderMonths) && (
+            <span class="pill pill-warn">{entry.backups.length ? 'backup check due' : 'no backup recorded'}</span>
+          )}
           {entry.tags.map((t) => (
             <span class="pill" key={t}>
               {t}

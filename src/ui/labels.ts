@@ -35,3 +35,7 @@ export const GROUP_OPTIONS: [GroupBy, string][] = [
   ['wallet', 'Wallet or account'],
   ['tag', 'First tag'],
 ]
+
+/** "Untitled seed phrase", but "Untitled SSH key": acronyms keep their capitals. */
+export const untitled = (kindLabel: string) =>
+  `Untitled ${/^[A-Z][A-Z]/.test(kindLabel) ? kindLabel : kindLabel.toLowerCase()}`

@@ -455,6 +455,16 @@ test('the privacy screen is a button that brings the vault back', async ({ page 
   await expect(cover).toHaveCount(0)
 })
 
+test('archiving says where the entry went, and an all-archived list offers the filter', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Archive', exact: true }).click()
+  await expect(app.getByText(/Archived\. It is under the "Archived" filter/)).toBeVisible()
+  await app.getByRole('button', { name: 'Collapse all' }).click()
+  await app.getByRole('button', { name: 'Show archived entries' }).click()
+  await expect(app.getByRole('button', { name: /Cold storage/ })).toBeVisible()
+})
+
 test('demo mode when opened directly', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText(/Demo mode/)).toBeVisible()
