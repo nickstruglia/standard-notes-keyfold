@@ -167,6 +167,7 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
           readOnly={readOnly}
           onInput={(e) => update({ description: e.currentTarget.value })}
           {...SECRET_ATTRS}
+          data-secret={undefined}
         />
       </Field>
       <div class="row">

@@ -156,7 +156,7 @@ test('reveals, copies with a toast, and hides all', async ({ page }) => {
   await expect(word1).toHaveAttribute('type', 'text')
 
   await app.getByRole('button', { name: 'Copy phrase' }).click()
-  await expect(app.getByText('Seed phrase copied. Clearing the clipboard in 30s.')).toBeVisible()
+  await expect(app.getByText(/Seed phrase copied\. The clipboard is cleared after 30s/)).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(PHRASE)
   // Phones are told that their keyboard may keep its own clipboard history.
   const touch = test.info().project.name !== 'desktop'
@@ -484,6 +484,31 @@ test('clears the clipboard, with a button when the sandbox blocks doing it autom
   await expect(app.getByText('Clipboard cleared.').or(clearNow)).toBeVisible({ timeout: 5000 })
   if (await clearNow.isVisible()) await clearNow.click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe(SEEDS[0].words.join(' '))
+  // Once cleared, the "waiting for a click" message goes away.
+  await expect(clearNow).toHaveCount(0)
+})
+
+test('copying a revealed secret with Ctrl+C also starts the timed clear', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'keyboard copy')
+  const { app } = await open(page, vaultText([SEEDS[0]], { clipboardClearSeconds: 10 }))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Reveal words' }).click()
+  const word1 = app.getByLabel('Word 1', { exact: true })
+  await word1.selectText()
+  await page.keyboard.press('ControlOrMeta+c')
+  await expect(app.getByText(/Selection copied\. The clipboard is cleared after 10s/)).toBeVisible()
+})
+
+test('locking by hand clears a copied secret right away', async ({ page }) => {
+  const { app } = await open(page, ENCRYPTED_NOTE)
+  await app.getByLabel('Vault password').fill(KAT_PASSWORD)
+  await app.getByRole('button', { name: 'Unlock' }).click()
+  await app.getByRole('button', { name: /Known answer/ }).click()
+  await app.getByRole('button', { name: 'Copy phrase' }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('legal winner')
+  await app.getByRole('button', { name: 'Lock', exact: true }).click()
+  await expect(app.getByRole('heading', { name: 'Vault locked' })).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain('legal winner')
 })
 
 test('typing in an older entry keeps focus and every keystroke', async ({ page }) => {

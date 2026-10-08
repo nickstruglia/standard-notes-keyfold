@@ -8,7 +8,7 @@ import { Toolbar, type ViewPrefs } from './Toolbar'
 import { Settings } from './Settings'
 import { ConfirmDialog, ConnectingScreen, type DialogState, ForeignScreen, LockScreen, NewerScreen, type ToastItem, Toasts, UnsupportedScreen } from './Screens'
 import { BIP39_ENGLISH } from '../lib/wordlist'
-import { clearClipboard, copyText } from '../lib/clipboard'
+import { clearClipboard, clearClipboardNow, copyText } from '../lib/clipboard'
 import {
   type EncryptedBlob,
   type Entry,
@@ -80,11 +80,23 @@ export const App = ({ host }: { host: Host }) => {
   const incomingSeq = useRef(0)
   const copySeq = useRef(0)
   const toastSeq = useRef(0)
+  /** A timed clipboard clear that is still waiting to run. */
+  const pendingClear = useRef<{ id: number; blockedToast?: number } | null>(null)
 
+  const dismissToast = useCallback((id: number) => setToasts((list) => list.filter((t) => t.id !== id)), [])
   const toast = useCallback((message: string, tone: ToastItem['tone'] = 'info', action?: ToastItem['action'], ms = 4000) => {
     const id = ++toastSeq.current
-    setToasts((list) => [...list.slice(-3), { id, message, tone, action }])
-    setTimeout(() => setToasts((list) => list.filter((t) => t.id !== id)), ms)
+    setToasts((list) => {
+      const next = [...list, { id, message, tone, action }]
+      // Keep at most 4; drop plain messages before ones with an action (Undo).
+      while (next.length > 4) {
+        const plain = next.findIndex((t) => !t.action && t.id !== id)
+        next.splice(plain === -1 ? 0 : plain, 1)
+      }
+      return next
+    })
+    setTimeout(() => dismissToast(id), ms)
+    return id
   }, [])
 
   const saver = useMemo(() => new Saver(host, (e) => toast(`Could not save: ${errorMessage(e)}`, 'error', undefined, 8000)), [host])
@@ -256,6 +268,13 @@ export const App = ({ host }: { host: Host }) => {
   }, [saver])
 
   const lock = useCallback(async (manual = false) => {
+    // A manual lock is a click: clear a pending copied secret now, while the
+    // browser still allows it (never from auto-lock, which has no click).
+    if (manual && pendingClear.current && clearClipboardNow()) {
+      if (pendingClear.current.blockedToast) dismissToast(pendingClear.current.blockedToast)
+      pendingClear.current = null
+      copySeq.current++
+    }
     // Commit a field that saves on blur (tags) before the vault goes away.
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     await saver.settle()
@@ -359,24 +378,27 @@ export const App = ({ host }: { host: Host }) => {
     toast('Vault password removed. Standard Notes encryption still protects the note.', 'success')
   }
 
-  const copy = useCallback(async (text: string, what: string) => {
-    if (!text) return
-    if (!(await copyText(text))) {
-      toast(`Could not copy ${what.toLowerCase()}: clipboard access was blocked.`, 'error')
-      return
-    }
+  /** Starts the timed clear after something secret reached the clipboard. */
+  const afterCopy = useCallback((what: string) => {
     const secs = settingsRef.current.clipboardClearSeconds
     const id = ++copySeq.current
+    if (pendingClear.current?.blockedToast) dismissToast(pendingClear.current.blockedToast)
+    pendingClear.current = secs ? { id } : null
     // Phone keyboards (Gboard, Samsung Keyboard...) keep their own clipboard
     // history, which no web page can clear.
     const touch = isTouchDevice()
-    const copied = secs ? `${what} copied. Clearing the clipboard in ${secs}s.` : `${what} copied.`
-    toast(touch ? `${copied} Your keyboard's clipboard history may keep its own copy.` : copied, 'success', undefined, touch ? 7000 : 4000)
+    const copied = secs
+      ? `${what} copied. The clipboard is cleared after ${secs}s, on your next click or tap here if the browser requires one. It stays copied if you leave this note first.`
+      : `${what} copied.`
+    toast(touch ? `${copied} Your keyboard's clipboard history may keep its own copy.` : copied, 'success', undefined, touch ? 8000 : 6000)
     if (!secs) return
-    const cleared = () =>
+    const cleared = () => {
+      if (pendingClear.current?.blockedToast) dismissToast(pendingClear.current.blockedToast)
+      if (pendingClear.current?.id === id) pendingClear.current = null
       touch
         ? toast("Clipboard cleared. Delete it from your keyboard's clipboard history too.", 'info', undefined, 6000)
         : toast('Clipboard cleared.', 'info', undefined, 3000)
+    }
     setTimeout(async () => {
       if (id !== copySeq.current) return
       if (await clearClipboard()) {
@@ -385,19 +407,43 @@ export const App = ({ host }: { host: Host }) => {
       }
       // Inside Standard Notes the browser only allows clipboard writes during
       // a click or tap, so clear on the next one (or the button).
-      let done = false
-      const clearOnce = async () => {
-        if (done || id !== copySeq.current) return
-        if (await clearClipboard()) {
-          done = true
+      const clearOnce = () => {
+        if (id !== copySeq.current) return window.removeEventListener('click', clearOnce, true)
+        if (clearClipboardNow()) {
           window.removeEventListener('click', clearOnce, true)
           cleared()
         }
       }
       window.addEventListener('click', clearOnce, true)
-      toast('The browser blocked clearing the clipboard. It clears on your next click or tap.', 'error', { label: 'Clear now', run: clearOnce }, 20000)
+      const blockedToast = toast('Waiting for a click or tap to clear the clipboard.', 'info', { label: 'Clear now', run: clearOnce }, 20000)
+      if (pendingClear.current?.id === id) pendingClear.current.blockedToast = blockedToast
     }, secs * 1000)
   }, [toast])
+
+  const copy = useCallback(async (text: string, what: string) => {
+    if (!text) return
+    if (!(await copyText(text))) {
+      toast(`Could not copy ${what.toLowerCase()}: clipboard access was blocked.`, 'error')
+      return
+    }
+    afterCopy(what)
+  }, [afterCopy])
+
+  // Ctrl+C, a long-press Copy or Cut from a revealed secret field also gets
+  // the timed clear. Only fields marked data-secret count, so the helper
+  // textarea the copy itself uses does not trigger this.
+  useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => {
+      const target = event.target as Element | null
+      if (target?.closest?.('[data-secret]')) afterCopy('Selection')
+    }
+    document.addEventListener('copy', onCopy, true)
+    document.addEventListener('cut', onCopy, true)
+    return () => {
+      document.removeEventListener('copy', onCopy, true)
+      document.removeEventListener('cut', onCopy, true)
+    }
+  }, [afterCopy])
 
   const confirm = useCallback(
     (options: ConfirmOptions) => new Promise<boolean>((resolve) => setDialog({ ...options, resolve })),

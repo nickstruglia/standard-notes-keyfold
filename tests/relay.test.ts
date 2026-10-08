@@ -158,6 +158,36 @@ describe('StandardNotesRelay', () => {
     expect(env.posted.slice(before).map((p) => p.message.action)).toEqual(['key-down', 'click'])
   })
 
+  it('always forwards releasing a modifier, and never AltGr characters', () => {
+    const env = setup()
+    register(env)
+    const before = env.posted.length
+    const key = (type: string, key: string, mods: Record<string, boolean> = {}, altGraph = false) => ({
+      type,
+      key,
+      code: key,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      altKey: false,
+      ...mods,
+      getModifierState: (m: string) => m === 'AltGraph' && altGraph,
+      preventDefault() {},
+    })
+    // Ctrl+Shift+Z, then Ctrl released before Shift.
+    env.emit('keydown', key('keydown', 'Control', { ctrlKey: true }))
+    env.emit('keydown', key('keydown', 'Shift', { ctrlKey: true, shiftKey: true }))
+    env.emit('keydown', key('keydown', 'Z', { ctrlKey: true, shiftKey: true }))
+    env.emit('keyup', key('keyup', 'Control', { shiftKey: true }))
+    env.emit('keyup', key('keyup', 'Shift'))
+    const sent = env.posted.slice(before).map((p) => `${p.message.action}:${p.message.data.key}`)
+    expect(sent).toEqual(['key-down:Control', 'key-down:Shift', 'key-down:Z', 'key-up:Control', 'key-up:Shift'])
+    // AltGr+n (Polish ń) is typing, not Ctrl+Alt+N.
+    const count = env.posted.length
+    env.emit('keydown', key('keydown', 'ń', { ctrlKey: true, altKey: true }, true))
+    expect(env.posted.length).toBe(count)
+  })
+
   it('shows the page once the theme loads, and swaps themes without a flash of the default one', async () => {
     const env = setup()
     const focus = 'file:///android_asset/Web.bundle/src/web-src/components/assets/org.standardnotes.theme-focus/index.css'

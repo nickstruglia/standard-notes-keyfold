@@ -1,6 +1,7 @@
-// Copying secrets: tries the async Clipboard API first (needs the
-// clipboard-write permission inside the Standard Notes iframe), then falls
-// back to execCommand, which works during a user gesture.
+// Copying secrets: execCommand first, synchronously, while the click's user
+// activation is still valid (Standard Notes' iframe has no clipboard-write
+// permission, so the async Clipboard API fails there and logs an error).
+// The async API is the fallback for pages outside Standard Notes.
 
 const legacyCopy = (text: string): boolean => {
   // Selecting the helper textarea moves focus; put it back afterwards so a
@@ -34,16 +35,20 @@ const legacyCopy = (text: string): boolean => {
 }
 
 export const copyText = async (text: string): Promise<boolean> => {
+  if (legacyCopy(text)) return true
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text)
       return true
     }
   } catch {
-    // Permission denied or not focused; try the fallback.
+    // Permission denied or not focused.
   }
-  return legacyCopy(text)
+  return false
 }
+
+/** Clears synchronously; only works during a click, tap or key press. */
+export const clearClipboardNow = (): boolean => legacyCopy(' ')
 
 /**
  * Best effort: browsers only allow clipboard writes while the page is focused
@@ -51,13 +56,14 @@ export const copyText = async (text: string): Promise<boolean> => {
  * history tools (Win+V, clipboard managers) may keep a copy.
  */
 export const clearClipboard = async (): Promise<boolean> => {
+  if (clearClipboardNow()) return true
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText('')
       return true
     }
   } catch {
-    // fall through
+    // Blocked: no user activation, or no permission.
   }
-  return legacyCopy(' ')
+  return false
 }

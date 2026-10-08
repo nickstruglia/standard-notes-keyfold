@@ -96,4 +96,13 @@ export const SECRET_ATTRS = {
   'data-lpignore': 'true',
   'data-bwignore': 'true',
   'data-form-type': 'other',
+  // Copying from these fields starts the timed clipboard clear.
+  'data-secret': '',
+} as const
+
+/** For fields that must keep their exact text (paths, fingerprints, addresses): no autocorrect, capitals or spellcheck. */
+export const EXACT_ATTRS = {
+  autocorrect: 'off',
+  autocapitalize: 'off',
+  spellcheck: false,
 } as const

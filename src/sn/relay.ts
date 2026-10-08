@@ -58,7 +58,7 @@ export const themeUrl = (url: string): string | undefined => {
 
 /** The page stays invisible until its theme applies, or this long at most. */
 const REVEAL_AFTER_MS = 2000
-const THEME_TIMEOUT_MS = 5000
+const MODIFIER_KEYS = ['Shift', 'Alt', 'Control', 'Meta', 'AltGraph']
 
 export class StandardNotesRelay {
   private sessionKey: string | undefined
@@ -147,12 +147,20 @@ export class StandardNotesRelay {
   /**
    * Forwards Ctrl/Cmd shortcuts so Standard Notes' own shortcuts keep working.
    * Shift- or Alt-only keys are not forwarded: those are ordinary typing,
-   * including capital letters in secret fields.
+   * including capital letters in secret fields. Releasing any modifier is
+   * always forwarded, so Standard Notes never keeps one held down (releasing
+   * Ctrl before Shift after Ctrl+Shift+Z left Shift stuck).
    */
   private onKey = (event: KeyboardEvent): void => {
     if (!this.sessionKey) return
-    const modifierKey = event.key === 'Control' || event.key === 'Meta'
-    if (!event.ctrlKey && !event.metaKey && !modifierKey) return
+    const modifier = MODIFIER_KEYS.includes(event.key)
+    const release = event.type === 'keyup' && modifier
+    // AltGr is reported as Ctrl+Alt on Windows: the character it types is text, not a shortcut.
+    if (event.getModifierState?.('AltGraph') && !modifier) return
+    const shortcut = event.ctrlKey || event.metaKey || event.key === 'Control' || event.key === 'Meta'
+    if (!shortcut && !release) return
+    // Ctrl/Cmd+S would open the browser's Save Page dialog; Standard Notes saves on its own.
+    if (event.type === 'keydown' && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') event.preventDefault()
     this.send(event.type === 'keydown' ? 'key-down' : 'key-up', {
       key: event.key,
       code: event.code,
@@ -182,8 +190,10 @@ export class StandardNotesRelay {
       }
       const link = doc.createElement('link')
       const load = new Promise((resolve) => {
+        // Load or error always fires (a CSP block counts as an error). A slow
+        // stylesheet keeps the old theme until it arrives; the page itself is
+        // shown after REVEAL_AFTER_MS regardless.
         link.onload = link.onerror = resolve
-        setTimeout(resolve, THEME_TIMEOUT_MS)
       })
       this.themeLoads.set(link, load)
       loads.push(load)
