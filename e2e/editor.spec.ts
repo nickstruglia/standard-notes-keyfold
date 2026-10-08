@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 
 // Runs the production build inside dev/host.html, a mock of the Standard
@@ -294,6 +295,55 @@ test('applies built-in themes the mobile apps send as file:// URLs', async ({ pa
   await expect(app.locator('html')).toHaveCSS('color-scheme', 'dark')
   expect(requested).toEqual(['https://app.standardnotes.com/components/assets/org.standardnotes.theme-focus/index.css'])
   expect(errors).toEqual([])
+})
+
+const ENCRYPTED_NOTE = JSON.stringify({
+  app: 'keyfold',
+  version: 1,
+  encryption: JSON.parse(readFileSync(new URL('../tests/fixtures/known-answer-v1.json', import.meta.url), 'utf8')),
+})
+const KAT_PASSWORD = 'correct horse battery staple'
+
+test('a restored non-vault revision clears the password state before converting', async ({ page }) => {
+  const { app, errors } = await open(page, ENCRYPTED_NOTE)
+  await expect(app.getByRole('heading', { name: 'Vault locked' })).toBeVisible()
+  // A revision from before Keyfold is restored from note history.
+  await page.evaluate(() => (window as any).mockHost.restore('my old notes\nline two'))
+  await app.getByRole('button', { name: 'Convert to a vault' }).click()
+  await app.getByRole('button', { name: 'Convert', exact: true }).click()
+  await expect(app.getByText('Imported note')).toBeVisible()
+  // The converted vault is plain, and the UI must say so.
+  await expect(app.getByRole('button', { name: 'Lock', exact: true })).toHaveCount(0)
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await expect(app.getByRole('button', { name: 'Set a vault password' })).toBeVisible()
+  // The imported text keeps its line break.
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries[0]?.customFields?.[0]?.value).toBe('my old notes\nline two')
+  expect(errors).toEqual([])
+})
+
+test('an unlocked vault is wiped when a non-vault revision arrives', async ({ page }) => {
+  const { app } = await open(page, ENCRYPTED_NOTE)
+  await app.getByLabel('Vault password').fill(KAT_PASSWORD)
+  await app.getByRole('button', { name: 'Unlock' }).click()
+  await expect(app.getByText('Known answer')).toBeVisible()
+  await page.evaluate(() => (window as any).mockHost.restore('plain old text'))
+  await expect(app.getByText('This note already has other content')).toBeVisible()
+  // The encrypted version comes back: it must ask for the password again.
+  await page.evaluate((text) => (window as any).mockHost.restore(text), ENCRYPTED_NOTE)
+  await expect(app.getByRole('heading', { name: 'Vault locked' })).toBeVisible()
+  await expect(app.getByText('Known answer')).toHaveCount(0)
+})
+
+test('editing an imported multi-line field keeps its line breaks', async ({ page }) => {
+  const { app } = await open(page, 'backup\nabandon\nthird line')
+  await app.getByRole('button', { name: 'Convert to a vault' }).click()
+  await app.getByRole('button', { name: 'Convert', exact: true }).click()
+  await app.getByText('Imported note').click()
+  await app.getByRole('button', { name: /Imported text \(hidden\)/ }).click()
+  const area = app.getByRole('textbox', { name: 'Imported text' })
+  await area.press('End')
+  await area.type('!')
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries[0]?.customFields?.[0]?.value).toBe('backup\nabandon\nthird line!')
 })
 
 test('demo mode when opened directly', async ({ page }) => {

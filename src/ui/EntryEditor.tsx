@@ -557,9 +557,40 @@ const CustomFieldsSection = ({ entry, update }: SectionArgs) => {
           />
           <div class="custom-value">
             {f.hidden ? (
-              <SecretField label={f.label || 'Field'} value={f.value} onInput={(value) => setField(f.id, { value })} />
+              <SecretField
+                label={f.label || 'Field'}
+                value={f.value}
+                multiline={f.multiline}
+                onInput={(value) => setField(f.id, { value })}
+                onMultilinePaste={(value) => setField(f.id, { value, multiline: true })}
+              />
+            ) : f.multiline ? (
+              <textarea
+                class="input"
+                rows={3}
+                value={f.value}
+                aria-label={f.label || 'Field value'}
+                readOnly={readOnly}
+                onInput={(e) => setField(f.id, { value: e.currentTarget.value })}
+              />
             ) : (
-              <input class="input" value={f.value} aria-label={f.label || 'Field value'} readOnly={readOnly} onInput={(e) => setField(f.id, { value: e.currentTarget.value })} />
+              <input
+                class="input"
+                value={f.value}
+                aria-label={f.label || 'Field value'}
+                readOnly={readOnly}
+                onInput={(e) => setField(f.id, { value: e.currentTarget.value })}
+                onPaste={(e) => {
+                  // A multi-line paste switches the field to multi-line instead of losing the line breaks.
+                  const text = e.clipboardData?.getData('text') ?? ''
+                  if (!/[\r\n]/.test(text)) return
+                  e.preventDefault()
+                  const input = e.currentTarget
+                  const start = input.selectionStart ?? f.value.length
+                  const end = input.selectionEnd ?? f.value.length
+                  setField(f.id, { value: f.value.slice(0, start) + text + f.value.slice(end), multiline: true })
+                }}
+              />
             )}
           </div>
           {!readOnly && (

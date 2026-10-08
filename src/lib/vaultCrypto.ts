@@ -1,5 +1,5 @@
 import { buf, fromBase64, fromUtf8, hasSubtleCrypto, randomBytes, toBase64, utf8 } from './encoding'
-import { APP_ID, FORMAT_VERSION, type EncryptedBlob, type VaultData, normalizeVault } from './vault'
+import { APP_ID, type EncryptedBlob, type VaultData, normalizeVault } from './vault'
 
 // Optional second layer on top of Standard Notes' own end-to-end encryption:
 // PBKDF2-SHA256 derives an AES-256-GCM key from a vault password. The key is
@@ -18,9 +18,14 @@ export interface VaultKey {
 
 export const encryptionAvailable = hasSubtleCrypto
 
-/** Binds the parameters to the ciphertext so they cannot be swapped unnoticed. */
+/**
+ * Binds the parameters to the ciphertext so they cannot be swapped unnoticed.
+ * Pinned to layout 1 on purpose: it must not follow FORMAT_VERSION, or
+ * bumping the note format would make every existing vault undecryptable.
+ */
+const AAD_VERSION = 1
 const additionalData = (iterations: number) =>
-  utf8(`${APP_ID}|${FORMAT_VERSION}|PBKDF2-SHA256|${iterations}|AES-256-GCM`)
+  utf8(`${APP_ID}|${AAD_VERSION}|PBKDF2-SHA256|${iterations}|AES-256-GCM`)
 
 export const deriveKey = async (
   password: string,
@@ -64,18 +69,44 @@ export class WrongPasswordError extends Error {
   }
 }
 
+export class DamagedVaultError extends Error {
+  constructor() {
+    super('The vault data in this note is damaged. Restore an earlier version from note history.')
+  }
+}
+
+const decode = (value: string): Uint8Array => {
+  try {
+    return fromBase64(value)
+  } catch {
+    throw new DamagedVaultError()
+  }
+}
+
+export class NoEncryptionError extends Error {
+  constructor() {
+    super('This browser cannot decrypt vaults here: encryption needs a secure (https) page. Open the note in the Standard Notes app or at app.standardnotes.com.')
+  }
+}
+
 export const decryptVault = async (blob: EncryptedBlob, vaultKey: VaultKey): Promise<VaultData> => {
+  const iv = decode(blob.iv)
+  const ciphertext = decode(blob.ciphertext)
   let plaintext: ArrayBuffer
   try {
     plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: buf(fromBase64(blob.iv)), additionalData: buf(additionalData(blob.iterations)) },
+      { name: 'AES-GCM', iv: buf(iv), additionalData: buf(additionalData(blob.iterations)) },
       vaultKey.key,
-      buf(fromBase64(blob.ciphertext)),
+      buf(ciphertext),
     )
   } catch {
     throw new WrongPasswordError()
   }
-  return normalizeVault(JSON.parse(fromUtf8(new Uint8Array(plaintext))))
+  try {
+    return normalizeVault(JSON.parse(fromUtf8(new Uint8Array(plaintext))))
+  } catch {
+    throw new DamagedVaultError()
+  }
 }
 
 /** Derives the key from the blob's own salt and iterations, then decrypts. */
@@ -83,7 +114,8 @@ export const unlockVault = async (
   blob: EncryptedBlob,
   password: string,
 ): Promise<{ vault: VaultData; vaultKey: VaultKey }> => {
-  const vaultKey = await deriveKey(password, fromBase64(blob.salt), blob.iterations)
+  if (!encryptionAvailable()) throw new NoEncryptionError()
+  const vaultKey = await deriveKey(password, decode(blob.salt), blob.iterations)
   const vault = await decryptVault(blob, vaultKey)
   return { vault, vaultKey }
 }

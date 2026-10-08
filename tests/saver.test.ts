@@ -46,3 +46,22 @@ describe('Saver echo detection', () => {
     expect(h.sent).toEqual(['fast'])
   })
 })
+
+describe('Saver timing', () => {
+  it('saves at least once a second during continuous typing', async () => {
+    vi.useFakeTimers()
+    const h = host()
+    const saver = new Saver(h, () => undefined)
+    // A keystroke every 100 ms for 3 s: the 300 ms debounce alone would never fire.
+    for (let i = 0; i < 30; i++) {
+      saver.schedule(() => ({ text: `t${i}`, preview: '' }))
+      await vi.advanceTimersByTimeAsync(100)
+    }
+    expect(h.sent.length).toBeGreaterThanOrEqual(2)
+    saver.schedule(() => ({ text: 't29', preview: '' }))
+    expect(saver.hasUnsent()).toBe(true)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(h.sent.at(-1)).toBe('t29')
+    expect(saver.hasUnsent()).toBe(false)
+  })
+})

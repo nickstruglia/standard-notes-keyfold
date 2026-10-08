@@ -19,6 +19,8 @@ export interface CustomField {
   label: string
   value: string
   hidden: boolean
+  /** Shown as a multi-line field (the value may contain line breaks). */
+  multiline?: boolean
 }
 
 export interface BackupLocation {
@@ -207,6 +209,8 @@ export const normalizeEntry = (raw: unknown): Entry => {
         label: str(fo.label),
         value: str(fo.value),
         hidden: bool(fo.hidden, true),
+        // Values with line breaks get a multi-line control so edits keep them.
+        multiline: fo.multiline === true || str(fo.value).includes('\n'),
       }
     }),
     notes: str(o.notes),
@@ -255,6 +259,8 @@ export type ParsedNote =
   | { kind: 'plain'; vault: VaultData }
   | { kind: 'encrypted'; blob: EncryptedBlob }
   | { kind: 'newer'; version: number }
+  /** A Keyfold note whose encryption block this version cannot read. */
+  | { kind: 'unsupported' }
   | { kind: 'foreign'; text: string }
 
 const isBlob = (v: unknown): v is EncryptedBlob => {
@@ -287,7 +293,7 @@ export const parseNote = (text: string | undefined | null): ParsedNote => {
   const version = typeof o.version === 'number' ? o.version : 0
   if (version > FORMAT_VERSION) return { kind: 'newer', version }
   if (o.encryption !== undefined) {
-    return isBlob(o.encryption) ? { kind: 'encrypted', blob: o.encryption } : { kind: 'foreign', text }
+    return isBlob(o.encryption) ? { kind: 'encrypted', blob: o.encryption } : { kind: 'unsupported' }
   }
   return { kind: 'plain', vault: normalizeVault(o.vault) }
 }

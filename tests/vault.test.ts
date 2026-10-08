@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   APP_ID,
   createEntry,
@@ -9,7 +10,7 @@ import {
   serializeEncrypted,
   serializePlain,
 } from '../src/lib/vault'
-import { WrongPasswordError, decryptVault, deriveKey, encryptVault, unlockVault } from '../src/lib/vaultCrypto'
+import { DamagedVaultError, WrongPasswordError, decryptVault, deriveKey, encryptVault, unlockVault } from '../src/lib/vaultCrypto'
 
 const sampleVault = () => {
   const vault = emptyVault()
@@ -103,5 +104,36 @@ describe('isBackupDue', () => {
     expect(isBackupDue(entry, 12, now)).toBe(false)
     expect(isBackupDue(entry, 6, now)).toBe(true)
     expect(isBackupDue(entry, 0, now)).toBe(false)
+  })
+})
+
+describe('stored format', () => {
+  it('decrypts a vault saved by format version 1 (known answer)', async () => {
+    // Checked in so that a change to the key derivation or the associated
+    // data can never silently lock users out of existing vaults.
+    const blob = JSON.parse(readFileSync(new URL('./fixtures/known-answer-v1.json', import.meta.url), 'utf8'))
+    const { vault } = await unlockVault(blob, 'correct horse battery staple')
+    expect(vault.entries[0].label).toBe('Known answer')
+    expect(vault.entries[0].words.join(' ')).toBe('legal winner thank year wave sausage worth useful legal winner thank yellow')
+  })
+
+  it('reports an encryption block it cannot read as unsupported, not foreign', () => {
+    const text = JSON.stringify({ app: APP_ID, version: 1, encryption: { kdf: 'scrypt', iterations: 1 } })
+    expect(parseNote(text).kind).toBe('unsupported')
+  })
+
+  it('reports damaged base64 as damaged data, not a wrong password', async () => {
+    const blob = JSON.parse(readFileSync(new URL('./fixtures/known-answer-v1.json', import.meta.url), 'utf8'))
+    await expect(unlockVault({ ...blob, salt: '%%%' }, 'x')).rejects.toBeInstanceOf(DamagedVaultError)
+  })
+
+  it('keeps line breaks in custom fields and marks them multi-line', () => {
+    const text = JSON.stringify({
+      app: APP_ID,
+      version: 1,
+      vault: { entries: [{ id: 'a', kind: 'other', customFields: [{ id: 'f', label: 'x', value: 'line 1\nline 2' }] }] },
+    })
+    const parsed = parseNote(text)
+    expect(parsed.kind === 'plain' && parsed.vault.entries[0].customFields[0]).toMatchObject({ value: 'line 1\nline 2', multiline: true })
   })
 })

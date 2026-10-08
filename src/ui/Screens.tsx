@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { useFocusOnMount } from './context'
+import { encryptionAvailable } from '../lib/vaultCrypto'
 
-export const LockScreen = ({ onUnlock }: { onUnlock: (password: string) => Promise<void> }) => {
-  const inputRef = useFocusOnMount<HTMLInputElement>()
+export const LockScreen = ({ onUnlock, autoFocus }: { onUnlock: (password: string) => Promise<void>; autoFocus: boolean }) => {
+  const available = encryptionAvailable()
+  const inputRef = useFocusOnMount<HTMLInputElement>(autoFocus && available)
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -27,6 +29,12 @@ export const LockScreen = ({ onUnlock }: { onUnlock: (password: string) => Promi
         <Icon name="lock" size={32} />
         <h2>Vault locked</h2>
         <p class="muted small">This note has an extra vault password. Standard Notes cannot recover it for you.</p>
+        {!available && (
+          <p class="status status-error" role="alert">
+            <Icon name="alert" /> This page cannot decrypt vaults: encryption needs a secure (https) connection. Open the note
+            in the Standard Notes app or at app.standardnotes.com.
+          </p>
+        )}
         <input
           class="input"
           type="password"
@@ -34,6 +42,7 @@ export const LockScreen = ({ onUnlock }: { onUnlock: (password: string) => Promi
           placeholder="Vault password"
           aria-label="Vault password"
           value={password}
+          disabled={!available}
           onInput={(e) => setPassword(e.currentTarget.value)}
           ref={inputRef}
         />
@@ -60,7 +69,7 @@ export const ForeignScreen = ({ length, readOnly, onConvert }: { length: number;
       </p>
       <p class="small">
         To keep the note as it is, switch it back to another editor in Standard Notes. Or convert it: the existing text is
-        kept in the notes of a new "Imported note" entry.
+        kept, line breaks included, in a hidden field of a new "Imported note" entry.
       </p>
       <button type="button" class="button primary" disabled={readOnly} onClick={onConvert}>
         Convert to a vault
@@ -77,6 +86,20 @@ export const NewerScreen = ({ version }: { version: number }) => (
       <p class="small">
         This vault uses format version {version}, which this copy of Keyfold does not understand yet. Nothing has been
         changed. Update the plugin in Standard Notes (Preferences → Plugins) to open it.
+      </p>
+    </div>
+  </div>
+)
+
+export const UnsupportedScreen = () => (
+  <div class="screen">
+    <div class="card">
+      <Icon name="alert" size={32} />
+      <h2>Vault encryption not recognized</h2>
+      <p class="small">
+        This is a Keyfold vault, but its password protection uses settings this copy of Keyfold cannot read, or the data
+        is damaged. Nothing has been changed. Update the plugin in Standard Notes (Preferences → Plugins), or restore an
+        earlier version from note history.
       </p>
     </div>
   </div>

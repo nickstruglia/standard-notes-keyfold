@@ -18,6 +18,9 @@ export class Saver {
   private ready: Serialized | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private inflight: Promise<void> = Promise.resolve()
+  /** When the oldest change not yet sent to Standard Notes was made. */
+  private unsentSince: number | null = null
+  private readyVersion = 0
   /** Texts we sent that Standard Notes has not echoed back yet. */
   private pending: { text: string; at: number }[] = []
   /** The note text as last seen or sent. */
@@ -27,17 +30,25 @@ export class Saver {
     private host: Host,
     private onError: (error: unknown) => void,
     private delayMs = 300,
+    /** Saves at least this often during continuous typing. */
+    private maxWaitMs = 1000,
   ) {}
 
   schedule(produce: () => Promise<Serialized> | Serialized): void {
     const version = ++this.version
+    this.unsentSince ??= Date.now()
     const run = async () => {
+      // A newer change supersedes this one: skip the work (encryption is costly).
+      if (version !== this.version) return
       try {
         const out = await produce()
         if (version !== this.version) return
         this.ready = out
+        this.readyVersion = version
         clearTimeout(this.timer)
-        this.timer = setTimeout(() => this.flush(), this.delayMs)
+        const since = this.unsentSince ?? Date.now()
+        const wait = Math.max(0, Math.min(this.delayMs, since + this.maxWaitMs - Date.now()))
+        this.timer = setTimeout(() => this.flush(), wait)
       } catch (error) {
         if (version === this.version) this.onError(error)
       }
@@ -52,8 +63,14 @@ export class Saver {
     const out = this.ready
     if (!out) return
     this.ready = null
+    if (this.readyVersion === this.version) this.unsentSince = null
     this.remember(out.text)
     this.host.save(out.text, out.preview)
+  }
+
+  /** True when local changes have not reached Standard Notes yet. */
+  hasUnsent(): boolean {
+    return this.unsentSince !== null
   }
 
   /** Waits for in-flight serialization, then flushes. */
@@ -68,6 +85,7 @@ export class Saver {
     clearTimeout(this.timer)
     this.timer = undefined
     this.ready = null
+    this.unsentSince = null
   }
 
   /**

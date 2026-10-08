@@ -6,7 +6,7 @@ import { EntryList, type Filter, type LayoutSnapshot, groupEntries, snapshotOf, 
 import { EntryStack } from './EntryStack'
 import { Toolbar, type ViewPrefs } from './Toolbar'
 import { Settings } from './Settings'
-import { ConfirmDialog, ConnectingScreen, type DialogState, ForeignScreen, LockScreen, NewerScreen, type ToastItem, Toasts } from './Screens'
+import { ConfirmDialog, ConnectingScreen, type DialogState, ForeignScreen, LockScreen, NewerScreen, type ToastItem, Toasts, UnsupportedScreen } from './Screens'
 import { BIP39_ENGLISH } from '../lib/wordlist'
 import { clearClipboard, copyText } from '../lib/clipboard'
 import {
@@ -32,7 +32,9 @@ type Phase =
   | { name: 'connecting' }
   | { name: 'foreign'; text: string }
   | { name: 'newer'; version: number }
-  | { name: 'locked'; blob: EncryptedBlob }
+  | { name: 'unsupported' }
+  /** autoFocus: put the cursor in the password field (not when a timer or another device locked it while the user was elsewhere). */
+  | { name: 'locked'; blob: EncryptedBlob; autoFocus: boolean }
   | { name: 'ready' }
 
 type View = { type: 'list' } | { type: 'entry'; id: string } | { type: 'settings' }
@@ -73,6 +75,8 @@ export const App = ({ host }: { host: Host }) => {
 
   const vaultRef = useRef(vault)
   const keyRef = useRef<VaultKey | null>(null)
+  /** The vault had a password (unlocked or locked) as of the last note shown. */
+  const protectedRef = useRef(false)
   const incomingSeq = useRef(0)
   const copySeq = useRef(0)
   const toastSeq = useRef(0)
@@ -112,6 +116,27 @@ export const App = ({ host }: { host: Host }) => {
     }
   }
 
+  /**
+   * Forgets everything an unlocked vault holds: the key, the decrypted
+   * entries, and any UI state that could show them (Undo toasts keep a
+   * deleted entry, dialogs show labels).
+   */
+  const wipeUnlocked = () => {
+    keyRef.current = null
+    saver.cancel()
+    showVault(emptyVault())
+    setHideEpoch((n) => n + 1)
+    setView({ type: 'list' })
+    setExpanded(new Set())
+    setSections({})
+    setNewEntryId(null)
+    setToasts([])
+    setDialog((open) => {
+      open?.resolve(false)
+      return null
+    })
+  }
+
   /** Applies a local change and queues a save. */
   const update = useCallback((change: (v: VaultData) => VaultData) => {
     if (readOnlyRef.current) return
@@ -125,20 +150,38 @@ export const App = ({ host }: { host: Host }) => {
     host.subscribe(async (note) => {
       setNoteLocked(note.locked)
       if (note.metadataOnly || saver.isEcho(note.text)) return
+      // Typing not yet sent is replaced by this version; say so.
+      const discarded = saver.hasUnsent()
       saver.cancel()
       saver.noteSeen(note.text)
       const seq = ++incomingSeq.current
+      const first = seq === 1
       const parsed = parseNote(note.text)
+      const notifyDiscarded = () =>
+        discarded &&
+        toast('A newer version arrived from another device or note history and replaced your last few keystrokes.', 'error', undefined, 8000)
       switch (parsed.kind) {
         case 'empty':
-        case 'plain':
-          keyRef.current = null
+        case 'plain': {
+          const wasProtected = protectedRef.current
+          if (keyRef.current) wipeUnlocked()
+          protectedRef.current = false
           setHasPassword(false)
           showVault(parsed.kind === 'plain' ? parsed.vault : emptyVault())
           setPhase({ name: 'ready' })
+          if (wasProtected && !first) {
+            toast(
+              'This vault is no longer password protected: the note was changed on another device or restored from history. Set a password again in Settings if this was not you.',
+              'error',
+              undefined,
+              60_000,
+            )
+          } else notifyDiscarded()
           return
+        }
         case 'encrypted': {
           setHasPassword(true)
+          protectedRef.current = true
           const key = keyRef.current
           if (key && sameSalt(parsed.blob, key)) {
             try {
@@ -148,22 +191,32 @@ export const App = ({ host }: { host: Host }) => {
               saver.cancel()
               showVault(data)
               setPhase({ name: 'ready' })
+              notifyDiscarded()
               return
             } catch {
               // Password changed elsewhere; fall through to the lock screen.
             }
           }
           if (seq !== incomingSeq.current) return
-          keyRef.current = null
+          if (keyRef.current) wipeUnlocked()
           showVault(emptyVault())
-          setPhase({ name: 'locked', blob: parsed.blob })
+          setPhase({ name: 'locked', blob: parsed.blob, autoFocus: first || document.hasFocus() })
           return
         }
         case 'foreign':
-          setPhase({ name: 'foreign', text: parsed.text })
-          return
         case 'newer':
-          setPhase({ name: 'newer', version: parsed.version })
+        case 'unsupported':
+          // Nothing of the previous vault may stay usable behind this screen.
+          if (keyRef.current) wipeUnlocked()
+          protectedRef.current = false
+          setHasPassword(false)
+          setPhase(
+            parsed.kind === 'foreign'
+              ? { name: 'foreign', text: parsed.text }
+              : parsed.kind === 'newer'
+                ? { name: 'newer', version: parsed.version }
+                : { name: 'unsupported' },
+          )
           return
       }
     })
@@ -202,25 +255,19 @@ export const App = ({ host }: { host: Host }) => {
     }
   }, [saver])
 
-  const lock = useCallback(async () => {
+  const lock = useCallback(async (manual = false) => {
+    // Commit a field that saves on blur (tags) before the vault goes away.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
     await saver.settle()
     const parsed = parseNote(saver.lastText)
-    if (parsed.kind !== 'encrypted') return
-    keyRef.current = null
+    if (parsed.kind !== 'encrypted') {
+      setHasPassword(false)
+      if (manual) toast('This note is not password protected, so it cannot be locked.', 'error')
+      return
+    }
+    wipeUnlocked()
     saver.forget()
-    showVault(emptyVault())
-    setHideEpoch((n) => n + 1)
-    setView({ type: 'list' })
-    setExpanded(new Set())
-    setSections({})
-    setNewEntryId(null)
-    // Toasts can hold secrets (an Undo keeps the deleted entry); drop them.
-    setToasts([])
-    setDialog((open) => {
-      open?.resolve(false)
-      return null
-    })
-    setPhase({ name: 'locked', blob: parsed.blob })
+    setPhase({ name: 'locked', blob: parsed.blob, autoFocus: manual || document.hasFocus() })
   }, [saver])
 
   // Auto-lock after inactivity.
@@ -230,12 +277,20 @@ export const App = ({ host }: { host: Host }) => {
     const bump = () => (last = Date.now())
     const events = ['pointerdown', 'keydown', 'input', 'wheel', 'touchstart'] as const
     events.forEach((e) => window.addEventListener(e, bump, { passive: true }))
-    const timer = setInterval(() => {
+    const check = () => {
       if (Date.now() - last >= settings.autoLockMinutes * 60_000) lock()
-    }, 5000)
+    }
+    // Timers are throttled in hidden tabs and on phones; check again on return.
+    const timer = setInterval(check, 5000)
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('pageshow', check)
+    window.addEventListener('focus', check)
     return () => {
       events.forEach((e) => window.removeEventListener(e, bump))
       clearInterval(timer)
+      document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('pageshow', check)
+      window.removeEventListener('focus', check)
     }
   }, [hasPassword, phase.name, settings.autoLockMinutes, lock])
 
@@ -487,11 +542,12 @@ export const App = ({ host }: { host: Host }) => {
     data.entries.push(
       createEntry('other', {
         label: 'Imported note',
-        customFields: [{ id: newId(), label: 'Imported text', value: text, hidden: true }],
+        customFields: [{ id: newId(), label: 'Imported text', value: text, hidden: true, multiline: true }],
       }),
     )
     showVault(data)
     setPhase({ name: 'ready' })
+    setHasPassword(keyRef.current !== null)
     saver.schedule(() => serialize(data))
   }
 
@@ -565,13 +621,16 @@ export const App = ({ host }: { host: Host }) => {
       body = <ConnectingScreen slow={slow} />
       break
     case 'locked':
-      body = <LockScreen onUnlock={unlock} />
+      body = <LockScreen onUnlock={unlock} autoFocus={phase.autoFocus} />
       break
     case 'foreign':
       body = <ForeignScreen length={phase.text.length} readOnly={noteLocked} onConvert={() => convertForeign(phase.text)} />
       break
     case 'newer':
       body = <NewerScreen version={phase.version} />
+      break
+    case 'unsupported':
+      body = <UnsupportedScreen />
       break
     case 'ready': {
       const toolbar = (
@@ -597,7 +656,7 @@ export const App = ({ host }: { host: Host }) => {
           }}
           onSettings={() => setView({ type: 'settings' })}
           hasPassword={hasPassword}
-          onLock={lock}
+          onLock={() => lock(true)}
           onHideAll={() => setHideEpoch((n) => n + 1)}
         />
       )
@@ -611,7 +670,7 @@ export const App = ({ host }: { host: Host }) => {
               onSetPassword={setPassword}
               onChangePassword={changePassword}
               onRemovePassword={removePassword}
-              onLock={lock}
+              onLock={() => lock(true)}
               onClose={() => setView({ type: 'list' })}
             />
           </main>

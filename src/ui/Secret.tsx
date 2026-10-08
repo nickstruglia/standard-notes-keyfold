@@ -11,6 +11,8 @@ interface SecretProps {
   multiline?: boolean
   mono?: boolean
   id?: string
+  /** Called instead of flattening when text with line breaks is pasted into a one-line field. */
+  onMultilinePaste?: (value: string) => void
 }
 
 /**
@@ -22,7 +24,7 @@ interface SecretProps {
  * Secure Input applies, and Ctrl+C cannot copy them. A multi-line secret
  * cannot be a password input, so it is not rendered at all until revealed.
  */
-export const SecretField = ({ value, onInput, label, placeholder, multiline, mono, id }: SecretProps) => {
+export const SecretField = ({ value, onInput, label, placeholder, multiline, mono, id, onMultilinePaste }: SecretProps) => {
   const { readOnly, copy } = useUi()
   const [revealed, setRevealed] = useReveal(value)
   const className = `input ${mono ? 'mono' : ''}`
@@ -76,6 +78,15 @@ export const SecretField = ({ value, onInput, label, placeholder, multiline, mon
         aria-label={label}
         readOnly={readOnly}
         onInput={(e) => onInput(e.currentTarget.value)}
+        onPaste={(e) => {
+          const text = e.clipboardData?.getData('text') ?? ''
+          if (!onMultilinePaste || !/[\r\n]/.test(text)) return
+          e.preventDefault()
+          const input = e.currentTarget
+          const start = input.selectionStart ?? value.length
+          const end = input.selectionEnd ?? value.length
+          onMultilinePaste(value.slice(0, start) + text + value.slice(end))
+        }}
         {...SECRET_ATTRS}
       />
     )
