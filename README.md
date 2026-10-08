@@ -61,7 +61,7 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 1. In Standard Notes, open **Preferences → Plugins**.
 2. Under **Install Custom Plugin**, paste this URL and install:
    ```
-   https://nickstruglia.github.io/sn-keyfold/ext.json
+   https://nickstruglia.github.io/standard-notes-keyfold/ext.json
    ```
 3. Create a new note, open the editor menu, and choose **Keyfold**.
 
@@ -124,7 +124,7 @@ npm run test:e2e   # Playwright tests against the production build, on desktop a
 1. Fork this repository.
 2. In the fork, go to **Settings → Pages** and set **Source** to **GitHub Actions**.
 3. Run the **Deploy to GitHub Pages** workflow (Actions tab), or push to the default branch.
-4. Install `https://<your-username>.github.io/sn-keyfold/ext.json` in Standard Notes.
+4. Install `https://<your-username>.github.io/standard-notes-keyfold/ext.json` in Standard Notes.
 
 The workflow writes your Pages URL into `ext.json` and publishes `keyfold.zip` for the desktop app's offline mode.
 

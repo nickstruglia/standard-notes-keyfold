@@ -3,7 +3,7 @@ import pkg from './package.json' with { type: 'json' }
 
 // Where the built editor is hosted. The deploy workflow passes the GitHub
 // Pages URL, so forks get a manifest that points at their own copy.
-const siteUrl = (process.env.SITE_URL || 'https://nickstruglia.github.io/sn-keyfold/').replace(/\/*$/, '/')
+const siteUrl = (process.env.SITE_URL || 'https://nickstruglia.github.io/standard-notes-keyfold/').replace(/\/*$/, '/')
 
 // No network access at all: scripts only from our own origin, nothing can
 // connect out. Styles stay open so Standard Notes themes can load: from the
@@ -35,7 +35,7 @@ const manifest = {
   url: siteUrl,
   download_url: `${siteUrl}keyfold.zip`,
   latest_url: `${siteUrl}ext.json`,
-  marketing_url: 'https://github.com/nickstruglia/sn-keyfold',
+  marketing_url: 'https://github.com/nickstruglia/standard-notes-keyfold',
   thumbnail_url: `${siteUrl}icon.svg`,
   note_type: 'authentication',
   file_type: 'json',

@@ -1,5 +1,5 @@
 {
-  "name": "sn-keyfold",
+  "name": "standard-notes-keyfold",
   "version": "1.0.0",
   "description": "Keyfold: a Standard Notes plugin for crypto seed phrases, wallet keys and other cryptographic keys.",
   "author": "Nicholas Truglia (https://github.com/nickstruglia)",
@@ -8,7 +8,7 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nickstruglia/sn-keyfold.git"
+    "url": "https://github.com/nickstruglia/standard-notes-keyfold.git"
   },
   "scripts": {
     "dev": "vite",

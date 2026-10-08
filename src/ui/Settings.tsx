@@ -246,8 +246,8 @@ export const Settings = ({ settings, hasPassword, onChange, onSetPassword, onCha
           <h3>About</h3>
           <p class="small">
             Keyfold {__APP_VERSION__}. Open source (MIT):{' '}
-            <a href="https://github.com/nickstruglia/sn-keyfold" target="_blank" rel="noopener noreferrer">
-              github.com/nickstruglia/sn-keyfold
+            <a href="https://github.com/nickstruglia/standard-notes-keyfold" target="_blank" rel="noopener noreferrer">
+              github.com/nickstruglia/standard-notes-keyfold
             </a>
             . The editor makes no network requests; its Content Security Policy blocks them.
           </p>

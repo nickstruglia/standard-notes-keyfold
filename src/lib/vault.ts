@@ -11,7 +11,7 @@ export type { EntryKind } from './kinds'
 export const APP_ID = 'keyfold'
 export const FORMAT_VERSION = 1
 export const README_NOTE =
-  'Managed by the Keyfold editor for Standard Notes (https://github.com/nickstruglia/sn-keyfold). ' +
+  'Managed by the Keyfold editor for Standard Notes (https://github.com/nickstruglia/standard-notes-keyfold). ' +
   'Edit this note with that editor so the JSON stays valid.'
 
 export interface CustomField {
