@@ -146,10 +146,11 @@ writeFileSync(
   `# Keyfold
 
 A key manager for Standard Notes: crypto seed phrases and wallet keys, plus SSH and PGP keys, API tokens and recovery
-codes. Each entry folds into a one-line card, secrets stay hidden until revealed, seed phrases and keys are checked for
-typos (BIP39 and Electrum checksums, Base58Check, Bech32, PGP armor), and an optional vault password encrypts the
-whole note again (AES-256-GCM, PBKDF2-SHA256 with 600,000 iterations). Encrypted backup files open in a single-file
-offline viewer, without Standard Notes.
+codes. Each entry folds into a one-line card, secrets stay hidden until revealed, saved entries open locked against
+accidental changes, seed phrases and keys are checked for typos (BIP39, Electrum, Monero and aezeed checksums,
+Base58Check, Bech32, PGP armor), and an optional vault password encrypts the whole note again (AES-256-GCM,
+PBKDF2-SHA256 with 600,000 iterations). Encrypted backup files open in a single-file offline viewer, without Standard
+Notes, and restore into an empty Keyfold note.
 
 Its Content Security Policy blocks every outgoing connection (\`connect-src 'none'\`), and scripts, images and fonts
 from other sites. The only runtime dependency is Preact.
