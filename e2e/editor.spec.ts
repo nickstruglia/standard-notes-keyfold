@@ -948,3 +948,85 @@ test('leaves the note type alone on a locked note and on current notes', async (
   expect(await page.evaluate(() => (window as any).mockHost.saves.length)).toBe(0)
   expect(await page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBeUndefined()
 })
+
+test('restores a backup file into an empty note, keeping its password', async ({ page }) => {
+  const source = await open(page, vaultText(SEEDS))
+  const backup = await exportBackup(page, source.app)
+
+  const { app, errors } = await open(page)
+  await app.getByRole('button', { name: 'Restore a backup file' }).click()
+  await app.getByLabel('Backup file').setInputFiles(backup.path)
+  await expect(app.getByRole('heading', { name: 'Encrypted backup' })).toBeVisible()
+  await app.getByLabel('Backup password').fill('not the password')
+  await app.getByRole('button', { name: 'Restore', exact: true }).click()
+  await expect(app.getByText('Wrong password, or the vault data is damaged.')).toBeVisible()
+  expect(await page.evaluate(() => (window as any).mockHost.saves.length)).toBe(0)
+
+  await app.getByLabel('Backup password').fill(BACKUP_PASSWORD)
+  await app.getByRole('button', { name: 'Restore', exact: true }).click()
+  for (const s of SEEDS) await expect(app.getByText(s.label, { exact: true }).first()).toBeVisible()
+  await expect(app.getByText(/Restored 3 entries\. The vault keeps the password you entered/)).toBeVisible()
+
+  // Saved as an ordinary encrypted vault: no backup fields, nothing readable.
+  await expect.poll(async () => (await noteJson(page))?.encryption?.cipher).toBe('AES-256-GCM')
+  const saved = await noteJson(page)
+  expect(saved.exportedAt).toBeUndefined()
+  expect(saved.vault).toBeUndefined()
+  for (const s of SEEDS) expect(await noteText(page)).not.toContain(s.label)
+
+  // It locks and unlocks with the backup's password.
+  await app.getByRole('button', { name: 'Lock', exact: true }).click()
+  await expect(app.getByRole('heading', { name: 'Vault locked' })).toBeVisible()
+  await app.getByLabel('Vault password').fill(BACKUP_PASSWORD)
+  await app.getByRole('button', { name: 'Unlock' }).click()
+  await expect(app.getByText(SEEDS[0].label, { exact: true }).first()).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('restores pasted text, plain or encrypted, and refuses anything else', async ({ page }) => {
+  let { app, errors } = await open(page)
+  await app.getByRole('button', { name: 'Restore a backup file' }).click()
+  await app.getByText('Paste the text instead').click()
+  await app.getByLabel('Backup text').fill('my shopping list')
+  await app.getByRole('button', { name: 'Continue' }).click()
+  await expect(app.getByText(/This is not the text of a Keyfold backup or note/)).toBeVisible()
+
+  // A plain vault, e.g. from a Standard Notes export: no password to ask for.
+  await app.getByLabel('Backup text').fill(vaultText(SEEDS))
+  await app.getByRole('button', { name: 'Continue' }).click()
+  await expect(app.getByText(/Restored 3 entries\. This vault has no password of its own/)).toBeVisible()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.length).toBe(3)
+  expect(errors).toEqual([])
+
+  // An encrypted note's text, saved with an old, weaker key setting.
+  ;({ app, errors } = await open(page))
+  await app.getByRole('button', { name: 'Restore a backup file' }).click()
+  await app.getByText('Paste the text instead').click()
+  await app.getByLabel('Backup text').fill(ENCRYPTED_NOTE)
+  await app.getByRole('button', { name: 'Continue' }).click()
+  await expect(app.getByRole('heading', { name: 'Encrypted vault' })).toBeVisible()
+  await app.getByLabel('Vault password').fill(KAT_PASSWORD)
+  await app.getByRole('button', { name: 'Restore', exact: true }).click()
+  await expect(app.getByText('Known answer', { exact: true }).first()).toBeVisible()
+  // Re-encrypted at the current strength.
+  await expect.poll(async () => (await noteJson(page))?.encryption?.iterations).toBeGreaterThan(1000)
+  expect(errors).toEqual([])
+})
+
+test('restore can be cancelled, is offered only while editing is allowed, and suits the phone app', async ({ page }) => {
+  let { app } = await open(page)
+  await app.getByRole('button', { name: 'Restore a backup file' }).click()
+  await expect(app.getByRole('heading', { name: 'Restore a backup' })).toBeVisible()
+  await app.getByRole('button', { name: 'Cancel' }).click()
+  await expect(app.getByText('No keys yet.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Toggle "Prevent editing"' }).click()
+  await expect(app.getByText('"Prevent editing" is on for this note.')).toBeVisible()
+  await expect(app.getByRole('button', { name: 'Restore a backup file' })).toHaveCount(0)
+
+  // In the phone apps, pasting comes first: choosing a file may do nothing there.
+  ;({ app } = await open(page, '', { mobile: '1' }))
+  await app.getByRole('button', { name: 'Restore a backup file' }).click()
+  await expect(app.getByText(/may not let plugins open files/)).toBeVisible()
+  await expect(app.getByLabel('Backup text')).toBeVisible()
+})

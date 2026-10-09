@@ -889,14 +889,17 @@ select.input {
   justify-content: center;
 }
 /* Recovery viewer */
-.open-note {
+.open-note,
+.restore-backup {
   max-width: 640px;
   width: 100%;
 }
-.open-note textarea {
+.open-note textarea,
+.restore-backup textarea {
   width: 100%;
 }
-.screen.dragging .open-note {
+.screen.dragging .open-note,
+.screen.dragging .restore-backup {
   border-color: var(--info);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 30%, transparent);
 }

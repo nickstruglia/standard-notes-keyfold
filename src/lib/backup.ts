@@ -10,8 +10,8 @@ export const VIEWER_FILE = 'keyfold-viewer.html'
 export const README_BACKUP =
   'Encrypted backup of a Keyfold vault (https://github.com/nickstruglia/standard-notes-keyfold). ' +
   `To read it without Standard Notes, open ${VIEWER_FILE} (keep a copy next to this file; it is also at ${__SITE_URL__}${VIEWER_FILE}) ` +
-  'in a browser and choose this file; it works offline. To restore it, paste the whole text of this file into a new ' +
-  'Standard Notes note, change the note type to Keyfold and unlock it with the backup password. ' +
+  'in a browser and choose this file; it works offline. To restore it, create a new Standard Notes note, change the note ' +
+  'type to Keyfold, choose "Restore a backup file" and pick this file, then enter the backup password. ' +
   encryptionReadme('the password chosen when the backup was made')
 
 export interface Backup {

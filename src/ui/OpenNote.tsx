@@ -5,10 +5,10 @@ import { parseNote } from '../lib/vault'
 import { VIEWER_FILE } from '../lib/backup'
 
 /** Far above any real vault; stops a wrong pick (a video) from being read into memory. */
-const MAX_FILE_BYTES = 20 * 1024 * 1024
+export const MAX_FILE_BYTES = 20 * 1024 * 1024
 
 /** FileReader rather than File.text(), which older Safari lacks. */
-const readText = (file: File) =>
+export const readText = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result ?? ''))

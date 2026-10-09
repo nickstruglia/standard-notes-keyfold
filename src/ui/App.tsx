@@ -6,6 +6,7 @@ import { EntryList, type Filter, type LayoutSnapshot, groupEntries, snapshotOf, 
 import { EntryStack } from './EntryStack'
 import { Toolbar, type ViewPrefs } from './Toolbar'
 import { Settings } from './Settings'
+import { RestoreBackup } from './RestoreBackup'
 import { ConfirmDialog, ConnectingScreen, type DialogState, ForeignScreen, LockScreen, NewerScreen, type ToastItem, Toasts, UnsupportedScreen } from './Screens'
 import { BIP39_ENGLISH } from '../lib/wordlist'
 import { clearClipboard, clearClipboardNow, copyText } from '../lib/clipboard'
@@ -74,6 +75,7 @@ export const App = ({ host }: { host: Host }) => {
   const [newEntryId, setNewEntryId] = useState<string | null>(null)
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [dialog, setDialog] = useState<DialogState | null>(null)
+  const [restoring, setRestoring] = useState(false)
 
   const vaultRef = useRef(vault)
   const keyRef = useRef<VaultKey | null>(null)
@@ -385,6 +387,46 @@ export const App = ({ host }: { host: Host }) => {
     setHasPassword(false)
     saver.schedule(() => serialize(vaultRef.current))
     toast('Vault password removed. Standard Notes encryption still protects the note.', 'success')
+  }
+
+  // Entries arrived from another device: the restore offer no longer applies.
+  useEffect(() => {
+    if (vault.entries.length > 0) setRestoring(false)
+  }, [vault.entries.length])
+
+  /** Loads a backup file, or a copied Keyfold note, into this empty vault. Encrypted ones keep their password. */
+  const restoreBackup = async (text: string, password: string) => {
+    const check = guard()
+    const parsed = parseNote(text)
+    let data: VaultData
+    let key: VaultKey | null = null
+    if (parsed.kind === 'plain') data = parsed.vault
+    else if (parsed.kind === 'encrypted') {
+      const opened = await unlockVault(parsed.blob, password)
+      data = opened.vault
+      // Saved with a weaker key setting: re-encrypt at the current strength.
+      key = opened.vaultKey.iterations < DEFAULT_ITERATIONS ? await deriveKey(password) : opened.vaultKey
+    } else throw new Error('This is not a Keyfold backup.')
+    if (isFromNewerVersion(data)) {
+      throw new Error('This was made by a newer version of Keyfold. Update the plugin in Standard Notes (Preferences → Plugins), then try again.')
+    }
+    check()
+    if (vaultRef.current.entries.length > 0) throw new Error('Entries were added to this note meanwhile. Restore into a new, empty note.')
+    keyRef.current = key
+    protectedRef.current = key !== null
+    setHasPassword(key !== null)
+    showVault(data)
+    setRestoring(false)
+    saver.schedule(() => serialize(data))
+    const count = `${data.entries.length} ${data.entries.length === 1 ? 'entry' : 'entries'}`
+    toast(
+      key
+        ? `Restored ${count}. The vault keeps the password you entered; you can change it in Settings.`
+        : `Restored ${count}. This vault has no password of its own; you can set one in Settings.`,
+      'success',
+      undefined,
+      8000,
+    )
   }
 
   const exportBackup = (password: string) => {
@@ -700,6 +742,11 @@ export const App = ({ host }: { host: Host }) => {
             </button>
           </div>
           <p class="small muted">Other key types are under Add.</p>
+          <p class="small">
+            <button type="button" class="link-button" onClick={() => setRestoring(true)}>
+              Restore a backup file
+            </button>
+          </p>
         </>
       )}
     </div>
@@ -853,6 +900,9 @@ export const App = ({ host }: { host: Host }) => {
             </div>
           </>
         )
+      }
+      if (restoring && vault.entries.length === 0 && !readOnly) {
+        body = <RestoreBackup mobileApp={host.inMobileApp()} onRestore={restoreBackup} onCancel={() => setRestoring(false)} />
       }
     }
   }
