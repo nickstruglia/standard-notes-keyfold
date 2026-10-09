@@ -175,11 +175,11 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
                   refs.current[i] = el
                 }}
                 class="input mono"
-                type={visible ? 'text' : 'password'}
+                // Spread as one object per type: a word list only goes with a visible (text) field.
+                {...(visible ? { type: 'text' as const, list: wordlist ? 'bip39-words' : undefined } : { type: 'password' as const })}
                 value={word}
                 aria-label={`Word ${i + 1}`}
                 aria-invalid={unknown}
-                list={wordlist && visible ? 'bip39-words' : undefined}
                 enterkeyhint={i === words.length - 1 ? 'done' : 'next'}
                 readOnly={readOnly}
                 onInput={(e) => onInput(i, e as unknown as InputEvent)}

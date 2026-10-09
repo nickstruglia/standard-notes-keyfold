@@ -1,4 +1,4 @@
-import type { JSX } from 'preact'
+import type { SVGAttributes } from 'preact'
 
 // Inline icons (stroke style) so the editor needs no external assets.
 const paths = {
@@ -38,7 +38,7 @@ const paths = {
 
 export type IconName = keyof typeof paths
 
-export const Icon = ({ name, size = 16, ...rest }: { name: IconName; size?: number } & JSX.SVGAttributes<SVGSVGElement>) => (
+export const Icon = ({ name, size = 16, ...rest }: { name: IconName; size?: number } & SVGAttributes<SVGSVGElement>) => (
   <svg
     width={size}
     height={size}

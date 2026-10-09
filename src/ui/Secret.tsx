@@ -72,7 +72,7 @@ export const SecretField = ({ value, onInput, label, placeholder, multiline, mon
       <input
         id={id}
         class={className}
-        type={revealed ? 'text' : 'password'}
+        {...(revealed ? { type: 'text' as const } : { type: 'password' as const })}
         value={value}
         placeholder={placeholder}
         aria-label={label}
