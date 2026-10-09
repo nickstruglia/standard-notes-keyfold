@@ -10,6 +10,9 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    # The site is built from the code alone: a push that only changes
+    # documentation or screenshots does not need a new version.
+    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
 
 permissions: {}
