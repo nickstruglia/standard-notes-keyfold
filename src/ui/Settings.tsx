@@ -395,6 +395,15 @@ export const Settings = ({
             <input type="checkbox" checked={settings.privacyScreen} disabled={readOnly} onChange={(e) => onChange({ privacyScreen: e.currentTarget.checked })} />
             <span>Privacy screen: blur the whole vault while the editor is not focused</span>
           </label>
+          <label class="check">
+            <input
+              type="checkbox"
+              checked={settings.lockSavedEntries}
+              disabled={readOnly}
+              onChange={(e) => onChange({ lockSavedEntries: e.currentTarget.checked })}
+            />
+            <span>Open saved entries locked, so nothing changes by accident while scrolling. Use Edit on an entry to change it.</span>
+          </label>
         </section>
 
         <section class="section">

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
 import { Icon, type IconName } from './icons'
 import { SecretField } from './Secret'
 import { WordGrid } from './WordGrid'
 import { KIND_LABELS, untitled } from './labels'
-import { EXACT_ATTRS, SECRET_ATTRS, useAsync, useSection, useUi } from './context'
+import { EXACT_ATTRS, SECRET_ATTRS, UiContext, useAsync, useSection, useUi } from './context'
 import { COMMON_WORD_COUNTS, MAX_WORDS, SCHEMES, type MnemonicScheme, checkMnemonic } from '../lib/mnemonic'
 import { detectKeyFormat, findPrivateMaterial } from '../lib/keyformat'
 import { type Entry, daysUntilExpiry, isBackupDue, lastVerified, today } from '../lib/vault'
@@ -832,15 +832,52 @@ export interface EntryHandlers {
   onUpdate: (patch: Partial<Entry>) => void
   onDelete: () => void
   onDuplicate: () => void
+  /** Unlocks the entry for editing (true), or locks it again (false). */
+  onEditing: (editing: boolean) => void
 }
 
-/** Favorite, duplicate, archive and delete buttons. */
-export const EntryActions = ({ entry, onUpdate, onDelete, onDuplicate }: { entry: Entry } & EntryHandlers) => {
+/**
+ * Saved entries open locked against accidental changes ("locked") until
+ * Edit ("editing"), unless that setting is off ("off").
+ */
+export type EntryLock = 'off' | 'locked' | 'editing'
+
+/** Makes everything inside read-only while the entry is locked. Always rendered, so unlocking keeps state (revealed words). */
+export const LockScope = ({ lock, children }: { lock: EntryLock; children: ComponentChildren }) => {
+  const ui = useUi()
+  const readOnly = ui.readOnly || lock === 'locked'
+  const value = useMemo(() => (readOnly === ui.readOnly ? ui : { ...ui, readOnly }), [ui, readOnly])
+  return (
+    <UiContext.Provider value={value}>
+      {lock === 'locked' && !ui.readOnly && (
+        <p class="lock-hint muted small">
+          <Icon name="lock" /> Locked, so nothing changes by accident. Use Edit to change it.
+        </p>
+      )}
+      {children}
+    </UiContext.Provider>
+  )
+}
+
+/** Edit or Done, then favorite, duplicate, archive and delete buttons. */
+export const EntryActions = ({
+  entry,
+  lock,
+  onUpdate,
+  onDelete,
+  onDuplicate,
+  onEditing,
+}: { entry: Entry; lock: EntryLock } & EntryHandlers) => {
   const { readOnly } = useUi()
   // Read-only, every action is disabled: show none rather than a row of greyed-out buttons.
   if (readOnly) return null
   return (
     <div class="entry-actions">
+      {lock !== 'off' && (
+        <button type="button" class="button small edit-toggle" onClick={() => onEditing(lock === 'locked')}>
+          <Icon name={lock === 'locked' ? 'edit' : 'check'} /> {lock === 'locked' ? 'Edit' : 'Done'}
+        </button>
+      )}
       <button
         type="button"
         class={`icon-button ${entry.favorite ? 'active' : ''}`}
@@ -914,14 +951,15 @@ export const EntryBody = ({ entry, reminderMonths, onUpdate, showLabel, focusLab
 
 interface EditorProps extends EntryHandlers {
   entry: Entry
+  lock: EntryLock
   reminderMonths: number
   onBack: () => void
   focusLabel?: boolean
 }
 
 /** Side panel editor for the "list + editor" layout. */
-export const EntryEditor = ({ entry, reminderMonths, onUpdate, onDelete, onDuplicate, onBack, focusLabel }: EditorProps) => {
-  const { readOnly } = useUi()
+export const EntryEditor = ({ entry, lock, reminderMonths, onUpdate, onDelete, onDuplicate, onEditing, onBack, focusLabel }: EditorProps) => {
+  const readOnly = useUi().readOnly || lock === 'locked'
   const labelRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (focusLabel) labelRef.current?.focus()
@@ -942,10 +980,12 @@ export const EntryEditor = ({ entry, reminderMonths, onUpdate, onDelete, onDupli
           onInput={(e) => !readOnly && onUpdate({ label: e.currentTarget.value })}
         />
         <span class={`badge badge-${entry.kind}`}>{KIND_LABELS[entry.kind]}</span>
-        <EntryActions entry={entry} onUpdate={onUpdate} onDelete={onDelete} onDuplicate={onDuplicate} />
+        <EntryActions entry={entry} lock={lock} onUpdate={onUpdate} onDelete={onDelete} onDuplicate={onDuplicate} onEditing={onEditing} />
       </header>
       <div class="editor-body">
-        <EntryBody entry={entry} reminderMonths={reminderMonths} onUpdate={onUpdate} showLabel={false} />
+        <LockScope lock={lock}>
+          <EntryBody entry={entry} reminderMonths={reminderMonths} onUpdate={onUpdate} showLabel={false} />
+        </LockScope>
       </div>
     </article>
   )

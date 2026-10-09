@@ -922,6 +922,19 @@ select.input {
 .paste-note {
   width: 100%;
 }
+/* A saved entry opened locked: its fields are read-only until Edit. */
+.lock-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.lock-hint svg {
+  flex: none;
+}
+.entry-actions .edit-toggle {
+  margin-right: 4px;
+}
 .notices > summary {
   color: var(--info);
   cursor: pointer;

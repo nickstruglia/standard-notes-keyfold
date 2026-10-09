@@ -44,6 +44,7 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
 
 - Each entry is a card that folds into one line (label, type, chain or service, word count, checksum, expiry and backup status) and opens when you click it. Expand all, collapse all, or have opening one card close the others.
 - Inside a card, every section collapses to a one-line summary. The secret opens by default and the rest stays folded.
+- Saved entries open locked, so nothing changes by accident while you scroll or tap around: use **Edit** to change one, and it locks again when you choose **Done** or close it. Revealing, copying, favorites and archiving work while locked. New entries start unlocked, and Settings can turn locking off.
 - Entries are grouped by type, with seed phrases and wallet keys first. You can also group by chain or service, wallet or account, or first tag, and sort by last update, label or creation date.
 - Compact density turns every entry into a single row. A list-beside-editor layout is available under **View**.
 - Search covers labels, descriptions, tags, notes, public details, visible custom fields and backup locations, never secret values. Labels sort numerically ("Wallet 2" before "Wallet 10").

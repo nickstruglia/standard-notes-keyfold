@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'preact/hooks'
 import { Icon } from './icons'
 import { memo } from './memo'
-import { EntryActions, EntryBody, type EntryHandlers } from './EntryEditor'
+import { EntryActions, EntryBody, type EntryHandlers, type EntryLock, LockScope } from './EntryEditor'
 import { type EntryGroup, EntrySummary, Group } from './EntryList'
 import type { Entry } from '../lib/vault'
 
 interface CardProps extends EntryHandlers {
   entry: Entry
+  lock: EntryLock
   open: boolean
   reminderMonths: number
   isNew: boolean
@@ -14,7 +15,7 @@ interface CardProps extends EntryHandlers {
 }
 
 /** One entry as an expandable card: a one-line summary that opens into its sections. */
-const EntryCard = memo(({ entry, open, reminderMonths, isNew, onToggle, ...handlers }: CardProps) => {
+const EntryCard = memo(({ entry, lock, open, reminderMonths, isNew, onToggle, ...handlers }: CardProps) => {
   const ref = useRef<HTMLLIElement>(null)
   useEffect(() => {
     if (isNew) ref.current?.scrollIntoView({ block: 'nearest' })
@@ -35,11 +36,13 @@ const EntryCard = memo(({ entry, open, reminderMonths, isNew, onToggle, ...handl
           <Icon name="chevron" size={14} class="chevron" />
           <EntrySummary entry={entry} reminderMonths={reminderMonths} idPrefix={bodyId} />
         </button>
-        {open && <EntryActions entry={entry} {...handlers} />}
+        {open && <EntryActions entry={entry} lock={lock} {...handlers} />}
       </div>
       {open && (
         <div class="card-body" id={bodyId}>
-          <EntryBody entry={entry} reminderMonths={reminderMonths} onUpdate={handlers.onUpdate} showLabel focusLabel={isNew} />
+          <LockScope lock={lock}>
+            <EntryBody entry={entry} reminderMonths={reminderMonths} onUpdate={handlers.onUpdate} showLabel focusLabel={isNew} />
+          </LockScope>
         </div>
       )}
     </li>
@@ -52,13 +55,14 @@ interface StackProps {
   collapsedGroups: Set<string>
   reminderMonths: number
   newId: string | null
+  lockFor: (id: string) => EntryLock
   onToggle: (id: string) => void
   onToggleGroup: (key: string) => void
   handlersFor: (id: string) => EntryHandlers
 }
 
 /** The card layout: every entry in one scrollable column, grouped and collapsible. */
-export const EntryStack = ({ groups, expanded, collapsedGroups, reminderMonths, newId, onToggle, onToggleGroup, handlersFor }: StackProps) => (
+export const EntryStack = ({ groups, expanded, collapsedGroups, reminderMonths, newId, lockFor, onToggle, onToggleGroup, handlersFor }: StackProps) => (
   <div class="stack">
     {groups.map((group) => (
       <Group
@@ -73,6 +77,7 @@ export const EntryStack = ({ groups, expanded, collapsedGroups, reminderMonths, 
             <EntryCard
               key={entry.id}
               entry={entry}
+              lock={lockFor(entry.id)}
               open={expanded.has(entry.id)}
               reminderMonths={reminderMonths}
               isNew={entry.id === newId}

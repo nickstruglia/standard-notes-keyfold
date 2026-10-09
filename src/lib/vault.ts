@@ -101,6 +101,8 @@ export interface VaultSettings {
   density: Density
   /** In the card layout, opening an entry closes the others. */
   singleExpand: boolean
+  /** Saved entries open read-only until Edit, so nothing changes by accident. */
+  lockSavedEntries: boolean
   groupBy: GroupBy
   sort: SortOrder
   /** ISO timestamp of the last encrypted backup file made from this vault. '' = never. */
@@ -127,6 +129,7 @@ export const DEFAULT_SETTINGS: VaultSettings = {
   layout: 'stacked',
   density: 'comfortable',
   singleExpand: false,
+  lockSavedEntries: true,
   // Grouping by type keeps seed phrases and wallet keys at the top.
   groupBy: 'kind',
   sort: 'updated',
@@ -285,6 +288,7 @@ export const normalizeVault = (raw: unknown): VaultData => {
       layout: oneOf(s.layout, ['stacked', 'split'], DEFAULT_SETTINGS.layout),
       density: oneOf(s.density, ['comfortable', 'compact'], DEFAULT_SETTINGS.density),
       singleExpand: bool(s.singleExpand, DEFAULT_SETTINGS.singleExpand),
+      lockSavedEntries: bool(s.lockSavedEntries, DEFAULT_SETTINGS.lockSavedEntries),
       groupBy: oneOf(s.groupBy, ['none', 'kind', 'chain', 'wallet', 'tag'], DEFAULT_SETTINGS.groupBy),
       sort: oneOf(s.sort, ['updated', 'label', 'created'], DEFAULT_SETTINGS.sort),
       lastExportedAt: str(s.lastExportedAt),

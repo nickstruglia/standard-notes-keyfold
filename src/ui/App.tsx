@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import { Icon } from './icons'
 import { UiContext, isTouchDevice, type ConfirmOptions, type Ui } from './context'
-import { EditorDatalists, EntryEditor, type EntryHandlers } from './EntryEditor'
+import { EditorDatalists, EntryEditor, type EntryHandlers, type EntryLock } from './EntryEditor'
 import { EntryList, type Filter, type LayoutSnapshot, groupEntries, snapshotOf, stabilize, visibleEntries } from './EntryList'
 import { EntryStack } from './EntryStack'
 import { Toolbar, type ViewPrefs } from './Toolbar'
@@ -78,6 +78,8 @@ export const App = ({ host }: { host: Host }) => {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [dialog, setDialog] = useState<DialogState | null>(null)
   const [restoring, setRestoring] = useState(false)
+  /** Entries unlocked with Edit (or just created), while saved ones open locked. For this session only. */
+  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(() => new Set())
 
   const vaultRef = useRef(vault)
   const keyRef = useRef<VaultKey | null>(null)
@@ -148,6 +150,7 @@ export const App = ({ host }: { host: Host }) => {
     setHideEpoch((n) => n + 1)
     setView({ type: 'list' })
     setExpanded(new Set())
+    setUnlockedIds(new Set())
     setSections({})
     setNewEntryId(null)
     setToasts([])
@@ -597,7 +600,17 @@ export const App = ({ host }: { host: Host }) => {
     setNewEntryId(id)
     setExpanded((open) => (viewPrefs.singleExpand ? new Set([id]) : new Set(open).add(id)))
     setView({ type: 'entry', id })
+    // A new entry starts unlocked: it still has to be filled in.
+    setUnlockedIds((unlocked) => new Set(unlocked).add(id))
   }
+
+  const setEntryEditing = (id: string, on: boolean) =>
+    setUnlockedIds((unlocked) => {
+      const next = new Set(unlocked)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
 
   const addEntry = (kind: EntryKind) => {
     const entry = createEntry(kind)
@@ -716,8 +729,8 @@ export const App = ({ host }: { host: Host }) => {
   layoutRef.current = { key: layoutKey, snapshot: snapshotOf(groups) }
 
   // Stable per-entry handlers, so unchanged cards can skip re-rendering.
-  const actionsRef = useRef({ updateEntry, deleteEntry, duplicateEntry })
-  actionsRef.current = { updateEntry, deleteEntry, duplicateEntry }
+  const actionsRef = useRef({ updateEntry, deleteEntry, duplicateEntry, setEntryEditing })
+  actionsRef.current = { updateEntry, deleteEntry, duplicateEntry, setEntryEditing }
   const handlerCache = useRef(new Map<string, EntryHandlers>())
   const handlersFor = (id: string): EntryHandlers => {
     let handlers = handlerCache.current.get(id)
@@ -726,11 +739,23 @@ export const App = ({ host }: { host: Host }) => {
         onUpdate: (patch) => actionsRef.current.updateEntry(id, patch),
         onDelete: () => actionsRef.current.deleteEntry(id),
         onDuplicate: () => actionsRef.current.duplicateEntry(id),
+        onEditing: (on) => actionsRef.current.setEntryEditing(id, on),
       }
       handlerCache.current.set(id, handlers)
     }
     return handlers
   }
+
+  const lockFor = (id: string): EntryLock => (!settings.lockSavedEntries ? 'off' : unlockedIds.has(id) ? 'editing' : 'locked')
+  // An unlocked entry locks again once it is closed, or once another one is shown beside the list.
+  const cardLayout = viewPrefs.layout === 'stacked'
+  useEffect(() => {
+    setUnlockedIds((unlocked) => {
+      const isOpen = (id: string) => (cardLayout ? expanded.has(id) : view.type === 'entry' && view.id === id)
+      const next = new Set([...unlocked].filter(isOpen))
+      return next.size === unlocked.size ? unlocked : next
+    })
+  }, [expanded, view, cardLayout])
 
   const emptyState = (
     <div class="empty">
@@ -817,7 +842,10 @@ export const App = ({ host }: { host: Host }) => {
           onSettings={() => setView({ type: 'settings' })}
           hasPassword={hasPassword}
           onLock={() => lock(true)}
-          onHideAll={() => setHideEpoch((n) => n + 1)}
+          onHideAll={() => {
+            setHideEpoch((n) => n + 1)
+            setUnlockedIds(new Set())
+          }}
         />
       )
       if (view.type === 'settings') {
@@ -856,6 +884,7 @@ export const App = ({ host }: { host: Host }) => {
                   collapsedGroups={collapsedGroups}
                   reminderMonths={settings.backupReminderMonths}
                   newId={newEntryId}
+                  lockFor={lockFor}
                   onToggle={toggleEntry}
                   onToggleGroup={toggleGroup}
                   handlersFor={handlersFor}
@@ -893,6 +922,7 @@ export const App = ({ host }: { host: Host }) => {
                   <EntryEditor
                     key={selected.id}
                     entry={selected}
+                    lock={lockFor(selected.id)}
                     reminderMonths={settings.backupReminderMonths}
                     focusLabel={selected.id === newEntryId}
                     onBack={() => {

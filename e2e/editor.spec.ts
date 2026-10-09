@@ -340,6 +340,7 @@ test('editing an imported multi-line field keeps its line breaks', async ({ page
   await app.getByRole('button', { name: 'Convert to a vault' }).click()
   await app.getByRole('button', { name: 'Convert', exact: true }).click()
   await app.getByText('Imported note').click()
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
   await app.getByRole('button', { name: /Imported text \(hidden\)/ }).click()
   const area = app.getByRole('textbox', { name: 'Imported text' })
   await area.press('End')
@@ -371,6 +372,7 @@ test('a theme stylesheet cannot load images or fonts from other sites', async ({
 test('warns about a private key in public info and tidies pasted fingerprints and paths', async ({ page }) => {
   const { app } = await open(page, vaultText([SEEDS[0]]))
   await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
   await app.getByRole('button', { name: /Public info/ }).click()
   const xprv = 'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
   await app.getByLabel('Addresses / xpub').fill(xprv)
@@ -431,6 +433,7 @@ test('on a 320 px phone the Add menu stays on screen', async ({ page }) => {
 test('warns when visible text gives a secret away', async ({ page }) => {
   const { app } = await open(page, vaultText([{ ...SEEDS[0], passphrase: 'tangerine' }]))
   await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
   await app.getByLabel('Passphrase hint').fill('my Tangerine')
   await expect(app.getByText('The hint contains the passphrase.', { exact: false })).toBeVisible()
   await app.getByRole('button', { name: /Notes/ }).click()
@@ -828,6 +831,7 @@ test('typing in an older entry keeps focus and every keystroke', async ({ page }
   const { app } = await open(page, vaultText(entries))
   // Sorted by last update, the oldest entry ("Cold storage") is at the bottom.
   await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
   await app.getByRole('button', { name: /^Details/ }).click()
   const description = app.getByRole('textbox', { name: 'Description' })
   await description.click()
@@ -1165,6 +1169,7 @@ test('shrinking a seed phrase does not undo words changed while the dialog was o
   const phrase = Array(23).fill('abandon').concat('art').join(' ')
   const { app } = await open(page, vaultText([seed('w', 'Big wallet', 'Bitcoin', phrase)]))
   await app.getByRole('button', { name: /Big wallet/ }).click()
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
   await app.getByRole('combobox', { name: 'Words', exact: true }).selectOption('12')
   await expect(app.getByText('Remove words?')).toBeVisible()
   const changed = vaultText([seed('w', 'Big wallet', 'Bitcoin', ['zoo', ...phrase.split(' ').slice(1)].join(' '))])
@@ -1194,4 +1199,72 @@ test('a mistyped English Monero word is marked, without BIP39 suggestions', asyn
   await expect(word).toHaveAttribute('aria-invalid', 'true')
   await word.focus()
   await expect(app.getByText(/Did you mean/)).toHaveCount(0)
+})
+
+test('saved entries open locked: Edit unlocks, Done and closing lock again, quick actions still work', async ({ page }) => {
+  const { app, errors } = await open(page, vaultText([SEEDS[0]]))
+  const card = app.getByRole('button', { name: /Cold storage/ })
+  await card.click()
+  await expect(app.getByText('Locked, so nothing changes by accident. Use Edit to change it.')).toBeVisible()
+  const word1 = app.getByLabel('Word 1', { exact: true })
+  await expect(word1).toHaveAttribute('readonly', '')
+  await expect(app.getByRole('combobox', { name: 'Scheme' })).toBeDisabled()
+
+  // Reveal and favorite need no Edit.
+  await app.getByRole('button', { name: 'Reveal words' }).click()
+  await expect(word1).toHaveAttribute('type', 'text')
+  await app.getByRole('button', { name: 'Favorite' }).click()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.[0]?.favorite).toBe(true)
+
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(word1).not.toHaveAttribute('readonly', '')
+  // Unlocking keeps the words revealed.
+  await expect(word1).toHaveAttribute('type', 'text')
+  await word1.fill('zoo')
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.[0]?.words?.[0]).toBe('zoo')
+
+  await app.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(word1).toHaveAttribute('readonly', '')
+
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
+  await card.click()
+  await card.click()
+  await expect(app.getByLabel('Word 1', { exact: true })).toHaveAttribute('readonly', '')
+  expect(errors).toEqual([])
+})
+
+test('new entries start unlocked, and locking can be turned off in Settings', async ({ page }) => {
+  const { app } = await open(page)
+  await add(app, 'Other secret')
+  await expect(app.getByRole('button', { name: 'Done', exact: true })).toBeVisible()
+  await app.getByLabel('Label').fill('Router')
+  await expect.poll(() => noteText(page)).toContain('Router')
+
+  await app.getByRole('button', { name: 'Settings' }).click()
+  const setting = app.getByRole('checkbox', { name: /Open saved entries locked/ })
+  await expect(setting).toBeChecked()
+  await setting.uncheck()
+  await expect.poll(async () => (await noteJson(page))?.vault?.settings?.lockSavedEntries).toBe(false)
+  await app.getByRole('button', { name: 'Close settings' }).click()
+
+  // Closed and reopened, the entry is still editable, and there is no Edit button.
+  const card = app.getByRole('button', { name: /Router/ })
+  await card.click()
+  await card.click()
+  await expect(app.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0)
+  await app.getByRole('button', { name: /^Details/ }).click()
+  await expect(app.getByLabel('Label')).not.toHaveAttribute('readonly', '')
+})
+
+test('in the list-beside-editor layout, an entry locks again when another is chosen', async ({ page }) => {
+  test.skip(test.info().project.name !== 'desktop', 'the side-by-side layout needs a wide screen')
+  const { app } = await open(page, vaultText(SEEDS, { layout: 'split' }))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  const label = app.getByRole('textbox', { name: 'Label' })
+  await expect(label).toHaveAttribute('readonly', '')
+  await app.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(label).not.toHaveAttribute('readonly', '')
+  await app.getByRole('button', { name: /DeFi wallet/ }).click()
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await expect(app.getByRole('textbox', { name: 'Label' })).toHaveAttribute('readonly', '')
 })
