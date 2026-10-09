@@ -21,7 +21,7 @@ through `postMessage`.
 | Secrets left in the clipboard | The clipboard is cleared after a delay. Standard Notes' sandbox blocks clipboard writes outside a click, so when the timed clear is blocked it happens on the next click or tap, or with a "Clear now" button. Phone keyboards with clipboard history keep their own copy, which no web page can delete; on touch screens Keyfold says so when you copy. |
 | Secrets leaking into the note list | The note preview contains counts only. |
 | Losing access to Standard Notes | Encrypted backup files, made with their own password (same format and key derivation as the vault password, new salt every time), to keep outside Standard Notes. The offline viewer is one HTML file: its only script is inline and allowed by its SHA-256 hash in the Content Security Policy, and it cannot connect anywhere, so it works from a flash drive with no network. |
-| Typos and incomplete copies | BIP39 wordlist and checksum checks, Electrum seed version checks, Base58Check and Bech32 checksums on wallet keys, PGP armor checksums, and a structural check that OpenSSH keys were copied completely. |
+| Typos and incomplete copies | BIP39 wordlist and checksum checks, Electrum seed version checks, aezeed checksums, Base58Check and Bech32 checksums on wallet keys, PGP armor checksums, and a structural check that OpenSSH keys were copied completely. |
 | Pasting the wrong half of a key pair | Warnings for addresses, xpubs, npubs, SSH and PGP public keys, certificates, age recipients and publishable API keys. |
 
 **What it cannot protect against**

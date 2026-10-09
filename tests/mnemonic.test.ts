@@ -3,7 +3,7 @@ import { generateMnemonic, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { BIP39_ENGLISH } from '../src/lib/wordlist'
 import { sha256, toHex, utf8 } from '../src/lib/encoding'
-import { checkMnemonic, electrumSeedType, expandPrefix, parsePhrase, splitPhrase, suggestWords } from '../src/lib/mnemonic'
+import { aezeedCheck, checkMnemonic, electrumSeedType, expandPrefix, parsePhrase, splitPhrase, suggestWords } from '../src/lib/mnemonic'
 
 const words = (phrase: string) => phrase.split(' ')
 
@@ -154,3 +154,61 @@ describe('more checksums', () => {
   })
 })
 
+describe('aezeed seeds', () => {
+  // The version 0 test vectors from lnd's aezeed/cipherseed_test.go.
+  const LND_VECTORS = [
+    'ability liquid travel stem barely drastic pact cupboard apple thrive morning oak feature tissue couch old math inform success suggest drink motion know royal',
+    'able tree stool crush transfer cloud cross three profit outside hen citizen plate ride require leg siren drum success suggest drink require fiscal upgrade',
+  ]
+
+  it.each(LND_VECTORS)('accepts the lnd test vector "%s"', async (phrase) => {
+    const result = await checkMnemonic('aezeed', words(phrase))
+    expect(result.status).toBe('valid')
+    expect(result.message).toMatch(/Valid aezeed checksum/)
+  })
+
+  it('rejects a changed word', async () => {
+    const changed = words(LND_VECTORS[0])
+    changed[23] = 'zoo'
+    const result = await checkMnemonic('aezeed', changed)
+    expect(result.status).toBe('invalid')
+    expect(result.message).toMatch(/Checksum mismatch/)
+  })
+
+  it('rejects swapped words', async () => {
+    const swapped = words(LND_VECTORS[1])
+    ;[swapped[5], swapped[6]] = [swapped[6], swapped[5]]
+    expect((await checkMnemonic('aezeed', swapped)).status).toBe('invalid')
+  })
+
+  it('rejects an unknown version', async () => {
+    const changed = words(LND_VECTORS[0])
+    changed[0] = 'zoo'
+    expect(aezeedCheck(changed.map((w) => BIP39_ENGLISH.indexOf(w)))).toBe('version')
+    expect((await checkMnemonic('aezeed', changed)).message).toMatch(/aezeed version/)
+  })
+
+  it('needs 24 words', async () => {
+    const result = await checkMnemonic('aezeed', words(LND_VECTORS[0]).slice(0, 12))
+    expect(result.status).toBe('invalid')
+    expect(result.message).toMatch(/24 words/)
+  })
+
+  it('points out an aezeed seed entered as BIP39, and the reverse', async () => {
+    const asBip39 = await checkMnemonic('bip39', words(LND_VECTORS[0]))
+    expect(asBip39.status).toBe('invalid')
+    expect(asBip39.message).toMatch(/valid aezeed seed/)
+
+    const bip39 = 'abandon '.repeat(23) + 'art'
+    const asAezeed = await checkMnemonic('aezeed', words(bip39))
+    expect(asAezeed.status).toBe('invalid')
+    expect(asAezeed.message).toMatch(/pass the BIP39 checksum/)
+  })
+
+  it('rarely mistakes random BIP39 phrases for aezeed seeds', () => {
+    for (let i = 0; i < 200; i++) {
+      const phrase = generateMnemonic(wordlist, 256)
+      expect(aezeedCheck(words(phrase).map((w) => BIP39_ENGLISH.indexOf(w)))).not.toBe('valid')
+    }
+  })
+})

@@ -207,13 +207,16 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
       }
       const ok = await bip39Checksum(words.map((w) => WORD_INDEX.get(w)!))
       if (ok) return { status: 'valid', message: `Valid BIP39 checksum (${words.length} words).`, unknownWords }
-      // Electrum seeds use the same words but their own checksum.
+      // Electrum and aezeed seeds use the same words but their own checksums.
       const electrum = words.length === 12 ? await electrumSeedType(words) : null
+      const aezeed = words.length === 24 && aezeedCheck(words.map((w) => WORD_INDEX.get(w)!)) === 'valid'
       return {
         status: 'invalid',
         message: electrum
           ? `Not a BIP39 phrase, but these words are a valid Electrum seed (${electrum}). Choose the Electrum scheme.`
-          : 'Checksum mismatch. Check the spelling and order of every word.',
+          : aezeed
+            ? 'Not a BIP39 phrase, but these words are a valid aezeed seed. Choose the Aezeed (LND) scheme.'
+            : 'Checksum mismatch. Check the spelling and order of every word.',
         unknownWords,
       }
     }
@@ -238,12 +241,34 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
             unknownWords,
           }
     }
-    case 'aezeed':
+    case 'aezeed': {
+      if (words.length !== 24) {
+        return {
+          status: 'invalid',
+          message: `Aezeed seeds have 24 words (this has ${words.length}).`,
+          unknownWords,
+        }
+      }
+      const indices = words.map((w) => WORD_INDEX.get(w)!)
+      const result = aezeedCheck(indices)
+      if (result === 'valid') {
+        return {
+          status: 'valid',
+          message: 'Valid aezeed checksum. A seed password, if it has one, is not checked.',
+          unknownWords,
+        }
+      }
+      const bip39 = hasSubtleCrypto() && (await bip39Checksum(indices))
       return {
-        status: 'unchecked',
-        message: 'All words are in the wordlist. The aezeed checksum is not checked here.',
+        status: 'invalid',
+        message: bip39
+          ? 'Not an aezeed seed, but these words pass the BIP39 checksum. Choose the BIP39 scheme.'
+          : result === 'version'
+            ? 'The first word does not match a known aezeed version. Check it, or pick another scheme.'
+            : 'Checksum mismatch. Check the spelling and order of every word.',
         unknownWords,
       }
+    }
   }
   return {
     status: 'unchecked',
@@ -252,15 +277,42 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
   }
 }
 
-/** CRC-32 (IEEE), as Monero uses for its checksum word. */
-const crc32 = (bytes: Uint8Array): number => {
+const CRC32_IEEE = 0xedb88320
+const CRC32_CASTAGNOLI = 0x82f63b78
+
+/** CRC-32: IEEE for Monero's checksum word, Castagnoli (CRC-32C) for aezeed. */
+const crc32 = (bytes: Uint8Array, polynomial = CRC32_IEEE): number => {
   let crc = 0xffffffff
   for (const byte of bytes) {
     let c = (crc ^ byte) & 0xff
-    for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1
+    for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ polynomial : c >>> 1
     crc = (crc >>> 8) ^ c
   }
   return (crc ^ 0xffffffff) >>> 0
+}
+
+/**
+ * aezeed (LND): 24 words carry 33 bytes, a version byte, the enciphered seed
+ * and its salt (29 bytes together), then a big-endian CRC-32C of those 29.
+ * Checking it needs no password: the password only protects the seed inside.
+ */
+export const aezeedCheck = (indices: number[]): 'valid' | 'version' | 'checksum' => {
+  const bytes = new Uint8Array(33)
+  let acc = 0
+  let bits = 0
+  let n = 0
+  for (const index of indices) {
+    acc = (acc << 11) | index
+    bits += 11
+    while (bits >= 8) {
+      bits -= 8
+      bytes[n++] = (acc >>> bits) & 0xff
+    }
+    acc &= (1 << bits) - 1
+  }
+  if (bytes[0] !== 0) return 'version'
+  const stored = new DataView(bytes.buffer).getUint32(29)
+  return crc32(bytes.subarray(0, 29), CRC32_CASTAGNOLI) === stored ? 'valid' : 'checksum'
 }
 
 /**
