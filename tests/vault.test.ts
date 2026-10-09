@@ -10,6 +10,7 @@ import {
   previewText,
   serializeEncrypted,
   serializePlain,
+  normalizeEntry,
 } from '../src/lib/vault'
 import { DamagedVaultError, WrongPasswordError, decryptVault, deriveKey, encryptVault, unlockVault } from '../src/lib/vaultCrypto'
 
@@ -172,5 +173,12 @@ describe('odd note text', () => {
   it('reads a vault that starts with a byte-order mark', () => {
     const text = '﻿' + JSON.stringify({ app: APP_ID, version: 1, vault: { entries: [] } })
     expect(parseNote(text).kind).toBe('plain')
+  })
+})
+
+describe('stored seed words', () => {
+  it('are read back composed (NFC), whatever form they were saved in', () => {
+    const entry = normalizeEntry({ kind: 'mnemonic', words: ['río'.normalize('NFKD'), 'abandon'] })
+    expect(entry.words).toEqual(['río'.normalize('NFC'), 'abandon'])
   })
 })

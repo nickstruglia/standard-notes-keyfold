@@ -86,10 +86,15 @@ export const useReveal = (activity?: unknown): [boolean, (next: boolean) => void
 export const isTouchDevice = (): boolean =>
   typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
 
+// autoCorrect, not autocorrect: Safari, Firefox and newer Chrome have a true/false
+// autocorrect property, which Preact would set instead of the attribute, and the
+// string 'off' counts as true there. No property has this casing, so Preact sets
+// the attribute, which HTML lowercases to autocorrect="off".
+
 /** Attributes that keep secrets away from spellcheck services, autofill and password managers. */
 export const SECRET_ATTRS = {
   autocomplete: 'off',
-  autocorrect: 'off',
+  autoCorrect: 'off',
   autocapitalize: 'off',
   spellcheck: false,
   'data-1p-ignore': 'true',
@@ -102,7 +107,7 @@ export const SECRET_ATTRS = {
 
 /** For fields that must keep their exact text (paths, fingerprints, addresses): no autocorrect, capitals or spellcheck. */
 export const EXACT_ATTRS = {
-  autocorrect: 'off',
+  autoCorrect: 'off',
   autocapitalize: 'off',
   spellcheck: false,
 } as const

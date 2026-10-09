@@ -366,6 +366,7 @@ export const App = ({ host }: { host: Host }) => {
     const key = await deriveKey(password)
     check()
     keyRef.current = key
+    protectedRef.current = true
     setHasPassword(true)
     saver.schedule(() => serialize(vaultRef.current))
     toast('Vault password set. The note is now encrypted with it.', 'success')
@@ -386,6 +387,7 @@ export const App = ({ host }: { host: Host }) => {
     await verifyPassword(current)
     check()
     keyRef.current = null
+    protectedRef.current = false
     setHasPassword(false)
     saver.schedule(() => serialize(vaultRef.current))
     toast('Vault password removed. Standard Notes encryption still protects the note.', 'success')
@@ -396,18 +398,23 @@ export const App = ({ host }: { host: Host }) => {
     if (vault.entries.length > 0) setRestoring(false)
   }, [vault.entries.length])
 
-  /** Loads a backup file, or a copied Keyfold note, into this empty vault. Encrypted ones keep their password. */
+  /**
+   * Loads a backup file, or a copied Keyfold note, into this empty vault. A
+   * vault that already has a password keeps it; otherwise an encrypted
+   * backup's password becomes the vault password.
+   */
   const restoreBackup = async (text: string, password: string) => {
     const check = guard()
     const parsed = parseNote(text)
+    const current = keyRef.current
     let data: VaultData
-    let key: VaultKey | null = null
+    let key: VaultKey | null = current
     if (parsed.kind === 'plain') data = parsed.vault
     else if (parsed.kind === 'encrypted') {
       const opened = await unlockVault(parsed.blob, password)
       data = opened.vault
       // Saved with a weaker key setting: re-encrypt at the current strength.
-      key = opened.vaultKey.iterations < DEFAULT_ITERATIONS ? await deriveKey(password) : opened.vaultKey
+      key ??= opened.vaultKey.iterations < DEFAULT_ITERATIONS ? await deriveKey(password) : opened.vaultKey
     } else throw new Error('This is not a Keyfold backup.')
     if (isFromNewerVersion(data)) {
       throw new Error('This was made by a newer version of Keyfold. Update the plugin in Standard Notes (Preferences → Plugins), then try again.')
@@ -422,9 +429,11 @@ export const App = ({ host }: { host: Host }) => {
     saver.schedule(() => serialize(data))
     const count = `${data.entries.length} ${data.entries.length === 1 ? 'entry' : 'entries'}`
     toast(
-      key
-        ? `Restored ${count}. The vault keeps the password you entered; you can change it in Settings.`
-        : `Restored ${count}. This vault has no password of its own; you can set one in Settings.`,
+      current
+        ? `Restored ${count}. The vault keeps its own password.`
+        : key
+          ? `Restored ${count}. The vault keeps the password you entered; you can change it in Settings.`
+          : `Restored ${count}. This vault has no password of its own; you can set one in Settings.`,
       'success',
       undefined,
       8000,
@@ -904,7 +913,14 @@ export const App = ({ host }: { host: Host }) => {
         )
       }
       if (restoring && vault.entries.length === 0 && !readOnly) {
-        body = <RestoreBackup mobileApp={host.inMobileApp()} onRestore={restoreBackup} onCancel={() => setRestoring(false)} />
+        body = (
+          <RestoreBackup
+            mobileApp={host.inMobileApp()}
+            vaultHasPassword={hasPassword}
+            onRestore={restoreBackup}
+            onCancel={() => setRestoring(false)}
+          />
+        )
       }
     }
   }

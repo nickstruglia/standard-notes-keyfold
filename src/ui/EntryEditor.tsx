@@ -236,7 +236,10 @@ const DetailsSection = ({ entry, update, showLabel, focusLabel }: SectionArgs & 
 }
 
 const MnemonicSection = ({ entry, update }: SectionArgs) => {
-  const { readOnly, confirm } = useUi()
+  const { readOnly, confirm, toast } = useUi()
+  // The entry as it is now, for when a dialog closes after it changed.
+  const latest = useRef(entry)
+  latest.current = entry
   const check = useAsync(() => checkMnemonic(entry.scheme, entry.words), [entry.scheme, entry.words.join(' ')])
   const scheme = SCHEMES.find((s) => s.id === entry.scheme)!
   const counts = [...new Set([...scheme.counts, ...COMMON_WORD_COUNTS])].sort((a, b) => a - b)
@@ -246,19 +249,23 @@ const MnemonicSection = ({ entry, update }: SectionArgs) => {
   /** Returns false when the count was not changed. */
   const setCount = async (count: number): Promise<boolean> => {
     if (!Number.isInteger(count) || count < 1 || count > MAX_WORDS || count === entry.words.length) return false
-    const dropped = entry.words.slice(count).filter(Boolean).length
-    if (
-      dropped > 0 &&
-      !(await confirm({
+    const words = entry.words
+    const dropped = words.slice(count).filter(Boolean).length
+    if (dropped > 0) {
+      const ok = await confirm({
         title: 'Remove words?',
         message: `Shrinking to ${count} words removes ${dropped} word${dropped === 1 ? '' : 's'} you entered.`,
         confirmLabel: 'Remove',
         danger: true,
-      }))
-    ) {
-      return false
+      })
+      if (!ok) return false
+      // Another device or note history changed the words while the dialog was open.
+      if (latest.current.words.join('\n') !== words.join('\n')) {
+        toast('The words changed while this was open. Nothing was removed.', 'error')
+        return false
+      }
     }
-    update({ words: Array.from({ length: count }, (_, i) => entry.words[i] ?? '') })
+    update({ words: Array.from({ length: count }, (_, i) => words[i] ?? '') })
     return true
   }
 

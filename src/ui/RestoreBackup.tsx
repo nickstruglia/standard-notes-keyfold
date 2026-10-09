@@ -9,6 +9,8 @@ import { encryptionAvailable } from '../lib/vaultCrypto'
 interface RestoreBackupProps {
   /** The Standard Notes phone apps, which may not let plugins open files. */
   mobileApp: boolean
+  /** This vault has a password of its own, which it keeps. */
+  vaultHasPassword: boolean
   /** Loads the text into the vault, decrypting it with the password; rejects with a message to show. */
   onRestore: (text: string, password: string) => Promise<void>
   onCancel: () => void
@@ -16,10 +18,11 @@ interface RestoreBackupProps {
 
 /**
  * Restores a backup file, or the copied text of a Keyfold note, into an
- * empty vault. Encrypted ones keep their password. (The other way, pasting
- * the text into a new note, still works.)
+ * empty vault. A vault with a password keeps it; otherwise an encrypted
+ * backup's password becomes the vault's. (Pasting the text into a new note
+ * still works too.)
  */
-export const RestoreBackup = ({ mobileApp, onRestore, onCancel }: RestoreBackupProps) => {
+export const RestoreBackup = ({ mobileApp, vaultHasPassword, onRestore, onCancel }: RestoreBackupProps) => {
   const [pasted, setPasted] = useState('')
   const [encrypted, setEncrypted] = useState<{ text: string; exportedAt?: string } | null>(null)
   const [password, setPassword] = useState('')
@@ -102,7 +105,9 @@ export const RestoreBackup = ({ mobileApp, onRestore, onCancel }: RestoreBackupP
             {encrypted.exportedAt
               ? `Made ${formatDate(encrypted.exportedAt)}. Enter the password chosen when the backup was made.`
               : 'Enter the vault password of the note this text came from.'}{' '}
-            The restored vault keeps this password. You can change it in Settings.
+            {vaultHasPassword
+              ? 'This vault keeps its own password.'
+              : 'The restored vault keeps this password. You can change it in Settings.'}
           </p>
           {!encryptionAvailable() && (
             <p class="status status-error" role="alert">

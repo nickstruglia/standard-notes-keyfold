@@ -311,3 +311,31 @@ describe('structural checks and more formats', () => {
   })
 })
 
+describe('audit fixes', () => {
+  it('flags typos in Litecoin and Dogecoin extended keys', async () => {
+    const versions = ['019d9cfe', '019da462', '01b26792', '01b26ef6', '02fac398', '02facafd']
+    for (const hex of versions) {
+      const version = Uint8Array.from(hex.match(/../g)!.map((b) => parseInt(b, 16)))
+      for (let i = 0; i < 8; i++) {
+        const key = b58c.encode(new Uint8Array([...version, ...randomBytes(74)]))
+        expect((await detectKeyFormat(typo(key, B58, 40)))?.level).toBe('error')
+      }
+    }
+  })
+
+  it('reads a key written with its origin, as Sparrow and Coldcard export it', async () => {
+    const xprv = 'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi'
+    const found = await detectKeyFormat(`[73c5da0a/84'/0'/0']${xprv}`)
+    expect(found?.label).toBe('Extended private key (xprv)')
+    expect(found?.detail).toContain("Key origin [73c5da0a/84'/0'/0'].")
+    // Real JSON lists are still JSON.
+    expect((await detectKeyFormat('[1, 2]'))?.label).not.toMatch(/does not parse/)
+  })
+
+  it('checks a long settings file quickly', async () => {
+    const started = performance.now()
+    await detectKeyFormat('[default]\n' + '\n'.repeat(100_000) + 'x')
+    expect(performance.now() - started).toBeLessThan(1000)
+    expect((await detectKeyFormat('[default]\r\naws_access_key_id = AKIA\r\naws_secret_access_key = abc\r\n'))?.label).toBe('AWS credentials file')
+  })
+})

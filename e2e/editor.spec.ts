@@ -924,28 +924,26 @@ test('works when the Standard Notes app has a "null" origin, as in the mobile ap
   expect(errors).toEqual([])
 })
 
-test('clears the note type early versions set, once, without changing the text', async ({ page }) => {
-  const text = vaultText([SEEDS[0]])
-  const { app, errors } = await open(page, text, { noteType: 'authentication' })
+test('clears the note type early versions set on the next real save, never just by opening the note', async ({ page }) => {
+  const { app, errors } = await open(page, vaultText([SEEDS[0]]), { noteType: 'authentication' })
   await expect(app.getByText('Cold storage')).toBeVisible()
-  await expect.poll(() => page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBe('unknown')
-  expect(await noteText(page)).toBe(text)
-  expect(await page.evaluate(() => (window as any).mockHost.saves.length)).toBe(1)
+  // Opening saves nothing: this device's copy may be older than the synced one.
+  await page.waitForTimeout(500)
+  expect(await page.evaluate(() => (window as any).mockHost.saves.length)).toBe(0)
+  expect(await page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBe('authentication')
+
+  await add(app, 'Other secret')
+  await app.getByLabel('Label').fill('Router')
+  await expect.poll(() => noteText(page)).toContain('Router')
+  expect(await page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBe('unknown')
   expect(errors).toEqual([])
 })
 
-test('leaves the note type alone on a locked note and on current notes', async ({ page }) => {
-  const text = vaultText([SEEDS[0]])
-  const { app } = await open(page, text, { noteType: 'authentication', locked: '1' })
-  await expect(app.getByText('"Prevent editing" is on for this note.')).toBeVisible()
-  await page.waitForTimeout(500)
-  expect(await page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBe('authentication')
-  expect(await page.evaluate(() => (window as any).mockHost.rejectedSaves ?? 0)).toBe(0)
-
-  const current = await open(page, text)
-  await expect(current.app.getByText('Cold storage')).toBeVisible()
-  await page.waitForTimeout(500)
-  expect(await page.evaluate(() => (window as any).mockHost.saves.length)).toBe(0)
+test('leaves the note type of current notes alone', async ({ page }) => {
+  const { app } = await open(page)
+  await add(app, 'Other secret')
+  await app.getByLabel('Label').fill('Router')
+  await expect.poll(() => noteText(page)).toContain('Router')
   expect(await page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBeUndefined()
 })
 
@@ -1064,4 +1062,116 @@ test('on phones, Add keeps its label and sits next to the filter at the same hei
   expect(Math.abs(box.height - filter!.height)).toBeLessThanOrEqual(1)
   expect(box.x + box.width).toBeLessThanOrEqual(search!.x + search!.width + 1)
   expect(filter!.width).toBeGreaterThan(box.width)
+})
+
+test('turns autocorrect off where the browser has an on/off autocorrect property', async ({ page }) => {
+  // Safari, Firefox and newer Chrome define it like this; a string "off" set on it reads as true.
+  await page.context().addInitScript(() => {
+    if ('autocorrect' in HTMLElement.prototype) return
+    Object.defineProperty(HTMLElement.prototype, 'autocorrect', {
+      configurable: true,
+      get() {
+        return this.getAttribute('autocorrect') !== 'off'
+      },
+      set(value) {
+        this.setAttribute('autocorrect', value ? 'on' : 'off')
+      },
+    })
+  })
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Reveal words' }).click()
+  await expect(app.getByLabel('Word 1', { exact: true })).toHaveAttribute('type', 'text')
+  const values = await app.locator('input, textarea').evaluateAll((els) =>
+    els.filter((el) => el.hasAttribute('autocorrect')).map((el) => el.getAttribute('autocorrect')),
+  )
+  expect(values.length).toBeGreaterThan(12)
+  expect(new Set(values)).toEqual(new Set(['off']))
+})
+
+test('revealed seed words are set up once, not on every keystroke', async ({ page }) => {
+  const { app } = await open(page, vaultText([SEEDS[0]]))
+  await app.getByRole('button', { name: /Cold storage/ }).click()
+  await app.getByRole('button', { name: 'Reveal words' }).click()
+  const word = app.getByLabel('Word 1', { exact: true })
+  await expect(word).toHaveAttribute('type', 'text')
+  await word.evaluate((el) => {
+    const w = window as any
+    w.typeChanges = 0
+    new MutationObserver((records) => (w.typeChanges += records.length)).observe(el.closest('ol, ul') ?? document.body, {
+      attributes: true,
+      attributeFilter: ['type'],
+      subtree: true,
+    })
+  })
+  await word.press('End')
+  await word.pressSequentially('xyz')
+  expect(await word.evaluate(() => (window as any).typeChanges)).toBe(0)
+})
+
+const setVaultPassword = async (app: App, password = 'correct horse battery staple') => {
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await app.getByRole('button', { name: 'Set a vault password' }).click()
+  await app.getByLabel('New vault password').fill(password)
+  await app.getByLabel('Repeat new password').fill(password)
+  await app.getByRole('checkbox', { name: /I understand/ }).check()
+  await app.getByRole('button', { name: 'Set password' }).click()
+  await expect(app.getByText('This vault is password protected.')).toBeVisible()
+}
+
+test('restoring a plain backup into a password-protected vault keeps the password', async ({ page }) => {
+  const { app, errors } = await open(page)
+  await setVaultPassword(app)
+  await app.getByRole('button', { name: 'Close settings' }).click()
+  await app.getByRole('button', { name: 'Restore a backup file' }).click()
+  await app.getByText('Paste the text instead').click()
+  await app.getByLabel('Backup text').fill(vaultText(SEEDS))
+  await app.getByRole('button', { name: 'Continue' }).click()
+  await expect(app.getByText('Restored 3 entries. The vault keeps its own password.')).toBeVisible()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.length ?? 0).toBe(0)
+  await expect.poll(async () => (await noteJson(page))?.encryption?.cipher).toBe('AES-256-GCM')
+  for (const s of SEEDS) expect(await noteText(page)).not.toContain(s.label)
+  await expect(app.getByRole('button', { name: 'Lock', exact: true })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('warns when a version without the password arrives right after setting one', async ({ page }) => {
+  const plain = vaultText([SEEDS[0]])
+  const { app } = await open(page, plain)
+  await setVaultPassword(app)
+  await expect.poll(async () => (await noteJson(page))?.encryption?.cipher).toBe('AES-256-GCM')
+  await page.evaluate((text) => (window as any).mockHost.restore(text), plain)
+  await expect(app.getByText(/This vault is no longer password protected/)).toBeVisible()
+})
+
+test('does not warn about a lost password after removing it on purpose', async ({ page }) => {
+  const { app } = await open(page, ENCRYPTED_NOTE)
+  await app.getByLabel('Vault password').fill(KAT_PASSWORD)
+  await app.getByRole('button', { name: 'Unlock' }).click()
+  await expect(app.getByText('Known answer', { exact: true }).first()).toBeVisible()
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await app.getByRole('button', { name: 'Remove password' }).click()
+  await app.getByLabel('Current vault password').fill(KAT_PASSWORD)
+  await app.getByRole('button', { name: 'Remove password' }).last().click()
+  await expect(app.getByRole('button', { name: 'Set a vault password' })).toBeVisible()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.length).toBe(1)
+  await page.getByRole('button', { name: 'Simulate edit from another device' }).click()
+  await app.getByRole('button', { name: 'Close settings' }).click()
+  await expect(app.getByText('Added on another device')).toBeVisible()
+  await expect(app.getByText(/no longer password protected/)).toHaveCount(0)
+})
+
+test('shrinking a seed phrase does not undo words changed while the dialog was open', async ({ page }) => {
+  const phrase = Array(23).fill('abandon').concat('art').join(' ')
+  const { app } = await open(page, vaultText([seed('w', 'Big wallet', 'Bitcoin', phrase)]))
+  await app.getByRole('button', { name: /Big wallet/ }).click()
+  await app.getByRole('combobox', { name: 'Words', exact: true }).selectOption('12')
+  await expect(app.getByText('Remove words?')).toBeVisible()
+  const changed = vaultText([seed('w', 'Big wallet', 'Bitcoin', ['zoo', ...phrase.split(' ').slice(1)].join(' '))])
+  await page.evaluate((text) => (window as any).mockHost.restore(text), changed)
+  await app.getByRole('button', { name: 'Remove', exact: true }).click()
+  await expect(app.getByText('The words changed while this was open. Nothing was removed.')).toBeVisible()
+  const words = (await noteJson(page))?.vault?.entries?.[0]?.words
+  expect(words?.length).toBe(24)
+  expect(words?.[0]).toBe('zoo')
 })

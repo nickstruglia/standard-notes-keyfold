@@ -21,12 +21,33 @@ export const usesBip39Wordlist = (scheme: MnemonicScheme): boolean =>
 
 const WORD_INDEX = new Map(BIP39_ENGLISH.map((w, i) => [w, i]))
 
+/** For comparing words (BIP39 uses NFKD). */
 export const normalizeWord = (word: string): string => word.normalize('NFKD').trim().toLowerCase()
+
+/**
+ * For storing words: composed (NFC) as people type them. Monero and other
+ * wallets look words up without normalizing, so a decomposed "río" would
+ * not be found when pasted into them.
+ */
+export const storedWord = (word: string): string => word.normalize('NFC').trim().toLowerCase()
 
 export const isBip39Word = (word: string): boolean => WORD_INDEX.has(normalizeWord(word))
 
 const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g
-const EDGE_PUNCTUATION = /^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu
+const WORD_CHAR = /[\p{L}\p{M}\p{N}]/u
+
+/**
+ * Drops punctuation around a token. A loop, not a regex: "[^…]+$" retries
+ * from every position and takes seconds on a long run of dots.
+ */
+const trimEdges = (token: string): string => {
+  const chars = [...token]
+  let start = 0
+  let end = chars.length
+  while (start < end && !WORD_CHAR.test(chars[start])) start++
+  while (end > start && !WORD_CHAR.test(chars[end - 1])) end--
+  return chars.slice(start, end).join('')
+}
 
 export interface ParsedPhrase {
   words: string[]
@@ -49,24 +70,38 @@ export const parsePhrase = (text: string): ParsedPhrase => {
     // (?<!\d) keeps this linear: without it, long runs of digits backtrack quadratically.
     .replace(/(?<!\d)(\d+)[.):\-]*(?=\p{L})/gu, '$1 ')
     .split(/[\s,;|]+/)
+  const items = tokens.flatMap((token): ({ n: number } | { word: string })[] => {
+    // "a)" and "b." are list markers, not words.
+    if (/^\p{L}[.)]$/u.test(token)) return []
+    const trimmed = trimEdges(token)
+    if (!trimmed) return []
+    if (/^\d+$/.test(trimmed)) return [{ n: Number(trimmed) }]
+    if (!/\p{L}/u.test(trimmed)) return []
+    return [{ word: storedWord(trimmed) }]
+  })
+  // "Word 1: merge  Word 2: camp": the same label before every number is not
+  // a word ("word" is even a BIP39 word, which the checksum could accept).
+  const numberAt = items.flatMap((item, i) => ('n' in item ? [i] : []))
+  const labels = numberAt.map((i) => items[i - 1])
+  if (
+    numberAt.length > 1 &&
+    labels.every((item) => item && 'word' in item && item.word === (labels[0] as { word: string }).word)
+  ) {
+    for (const i of numberAt.reverse()) items.splice(i - 1, 1)
+  }
+
   const numbered: { n: number; word: string }[] = []
   const words: string[] = []
   let pending: number | null = null
   let allNumbered = true
-  for (const token of tokens) {
-    // "a)" and "b." are list markers, not words.
-    if (/^\p{L}[.)]$/u.test(token)) continue
-    const trimmed = token.replace(EDGE_PUNCTUATION, '')
-    if (!trimmed) continue
-    if (/^\d+$/.test(trimmed)) {
-      pending = Number(trimmed)
+  for (const item of items) {
+    if ('n' in item) {
+      pending = item.n
       continue
     }
-    if (!/\p{L}/u.test(trimmed)) continue
-    const word = normalizeWord(trimmed)
-    words.push(word)
+    words.push(item.word)
     if (pending === null) allNumbered = false
-    else numbered.push({ n: pending, word })
+    else numbered.push({ n: pending, word: item.word })
     pending = null
   }
   if (allNumbered && words.length > 1) {
@@ -93,9 +128,9 @@ export const splitPhrase = (text: string): string[] => parsePhrase(text).words
  */
 export const expandPrefix = (word: string): string => {
   const w = normalizeWord(word)
-  if (w.length < 4 || WORD_INDEX.has(w)) return w
+  if (w.length < 4 || WORD_INDEX.has(w)) return storedWord(word)
   const matches = BIP39_ENGLISH.filter((candidate) => candidate.startsWith(w))
-  return matches.length === 1 ? matches[0] : w
+  return matches.length === 1 ? matches[0] : storedWord(word)
 }
 
 const editDistance = (a: string, b: string): number => {
@@ -212,8 +247,9 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
       const aezeed = words.length === 24 && aezeedCheck(words.map((w) => WORD_INDEX.get(w)!)) === 'valid'
       return {
         status: 'invalid',
+        // Electrum's own check is only 8 bits, so a mistyped BIP39 phrase can pass it too.
         message: electrum
-          ? `Not a BIP39 phrase, but these words are a valid Electrum seed (${electrum}). Choose the Electrum scheme.`
+          ? `BIP39 checksum mismatch. The words do pass Electrum's check (${electrum} seed): if this seed came from Electrum, choose the Electrum scheme; otherwise check every word.`
           : aezeed
             ? 'Not a BIP39 phrase, but these words are a valid aezeed seed. Choose the Aezeed (LND) scheme.'
             : 'Checksum mismatch. Check the spelling and order of every word.',
@@ -258,7 +294,10 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
           unknownWords,
         }
       }
-      const bip39 = hasSubtleCrypto() && (await bip39Checksum(indices))
+      // A wrong version byte means it is not an aezeed seed at all. A failed
+      // CRC is far more likely a typo in one: the 4-bit to 8-bit BIP39
+      // checksum would pass by chance, so it is no hint then.
+      const bip39 = result === 'version' && hasSubtleCrypto() && (await bip39Checksum(indices))
       return {
         status: 'invalid',
         message: bip39
@@ -319,12 +358,17 @@ export const aezeedCheck = (indices: number[]): 'valid' | 'version' | 'checksum'
  * Monero (25 words, or 13 for MyMonero): the last word repeats one of the
  * others, chosen by a CRC-32 of each word's first letters. English and most
  * languages use 3-letter prefixes; some use 4, Chinese 1, so all are tried.
+ * Like Monero, only the prefixes are compared, so abbreviated words work;
+ * whole words for 1-letter prefixes, where comparing one letter would let
+ * most typos through (Chinese words are a single character anyway).
  */
 export const moneroChecksumOk = (words: string[]): boolean => {
   const body = words.slice(0, -1).map((w) => w.normalize('NFC'))
   const last = words[words.length - 1].normalize('NFC')
   return [3, 4, 1].some((length) => {
-    const prefixes = body.map((w) => [...w].slice(0, length).join('')).join('')
-    return body[crc32(utf8(prefixes)) % body.length] === last
+    const prefix = (w: string) => [...w].slice(0, length).join('')
+    const prefixes = body.map(prefix).join('')
+    const expected = body[crc32(utf8(prefixes)) % body.length]
+    return length === 1 ? expected === last : prefix(expected) === prefix(last)
   })
 }

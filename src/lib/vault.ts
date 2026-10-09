@@ -206,7 +206,8 @@ export const normalizeEntry = (raw: unknown): Entry => {
     favorite: bool(o.favorite),
     archived: bool(o.archived),
     scheme: SCHEME_IDS.includes(o.scheme as MnemonicScheme) ? (o.scheme as MnemonicScheme) : 'bip39',
-    words: arr(o.words).map((w) => str(w)),
+    // Composed (NFC): pasted words were once saved decomposed, which Monero cannot look up.
+    words: arr(o.words).map((w) => str(w).normalize('NFC')),
     passphrase: str(o.passphrase),
     passphraseHint: str(o.passphraseHint),
     secret: str(o.secret),

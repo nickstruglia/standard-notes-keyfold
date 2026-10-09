@@ -122,7 +122,28 @@ describe('word helpers', () => {
       'sausage',
     ])
     expect(splitPhrase('legal\u200Bwinner | thank')).toEqual(['legal', 'winner', 'thank'])
-    expect(splitPhrase('acto arte ábaco')).toEqual(['acto', 'arte', 'ábaco'.normalize('NFKD')])
+    expect(splitPhrase('acto arte ábaco')).toEqual(['acto', 'arte', 'ábaco'.normalize('NFC')])
+  })
+
+  it('stores pasted words composed (NFC), which is how Monero and other wallets look them up', () => {
+    const decomposed = 'alteza río rígido'.normalize('NFKD')
+    expect(splitPhrase(decomposed)).toEqual(['alteza', 'río'.normalize('NFC'), 'rígido'.normalize('NFC')])
+    expect(expandPrefix('río'.normalize('NFKD'))).toBe('río'.normalize('NFC'))
+  })
+
+  it('drops a label repeated before every number ("Word 1: merge")', () => {
+    const phrase = 'legal winner thank year wave sausage worth useful legal winner thank yellow'.split(' ')
+    const labelled = phrase.map((w, i) => `Word ${i + 1}: ${w}`).join('\n')
+    expect(parsePhrase(labelled).words).toEqual(phrase)
+    expect(parsePhrase(phrase.map((w, i) => `Wort ${i + 1} - ${w}`).join(' ')).words).toEqual(phrase)
+    // Not a label: the same word before only some of the numbers.
+    expect(splitPhrase('1. abandon 2. abandon 3. about')).toEqual(['abandon', 'abandon', 'about'])
+  })
+
+  it('handles long runs of punctuation quickly', () => {
+    const started = performance.now()
+    splitPhrase('a' + '.'.repeat(100_000) + 'b')
+    expect(performance.now() - started).toBeLessThan(1000)
   })
 
   it('expands unique 4-letter prefixes only', () => {
@@ -140,6 +161,8 @@ describe('more checksums', () => {
   it('checks the Monero checksum word', async () => {
     const seed = 'sequence atlas unveil summon pebbles tuesday beer rudely snake rockets different fuselage woven tagged bested dented vegan hover rapid fawns obvious muppet randomly seasons randomly'.split(' ')
     expect((await checkMnemonic('monero', seed)).status).toBe('valid')
+    // Monero compares prefixes, so an abbreviated checksum word is fine.
+    expect((await checkMnemonic('monero', [...seed.slice(0, 24), 'ran'])).status).toBe('valid')
     const wrong = [...seed.slice(0, 24), 'sequence']
     expect((await checkMnemonic('monero', wrong)).status).toBe('invalid')
   })
@@ -149,7 +172,7 @@ describe('more checksums', () => {
     const words = 'wild father tree among universe such mobile favorite target dynamic credit identify'.split(' ')
     const electrum = await electrumSeedType(words)
     const result = await checkMnemonic('bip39', words)
-    if (electrum) expect(result.message).toMatch(/valid Electrum seed/)
+    if (electrum) expect(result.message).toMatch(/pass Electrum's check .*otherwise check every word/)
     else expect(result.status).toBe('invalid')
   })
 })
@@ -194,12 +217,23 @@ describe('aezeed seeds', () => {
     expect(result.message).toMatch(/24 words/)
   })
 
+  it('does not send a mistyped aezeed seed to BIP39, where it could pass by chance', async () => {
+    // lnd vector 1 with "morning" changed to "code": a failed CRC, but a valid BIP39 checksum.
+    const typo = words(LND_VECTORS[0])
+    typo[10] = 'code'
+    const result = await checkMnemonic('aezeed', typo)
+    expect(result.status).toBe('invalid')
+    expect(result.message).toMatch(/Checksum mismatch/)
+    expect(result.message).not.toMatch(/BIP39/)
+  })
+
   it('points out an aezeed seed entered as BIP39, and the reverse', async () => {
     const asBip39 = await checkMnemonic('bip39', words(LND_VECTORS[0]))
     expect(asBip39.status).toBe('invalid')
     expect(asBip39.message).toMatch(/valid aezeed seed/)
 
-    const bip39 = 'abandon '.repeat(23) + 'art'
+    // (Not "abandon … art": phrases starting with one of the first 8 words look like a mistyped aezeed seed.)
+    const bip39 = 'zoo '.repeat(23) + 'vote'
     const asAezeed = await checkMnemonic('aezeed', words(bip39))
     expect(asAezeed.status).toBe('invalid')
     expect(asAezeed.message).toMatch(/pass the BIP39 checksum/)

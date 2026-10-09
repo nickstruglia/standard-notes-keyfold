@@ -41,19 +41,19 @@ const isLocked = (item: RelayItem): boolean =>
  * Authenticator, where adding an entry overwrites the vault. Standard Notes
  * stores the content a plugin saves as is, so saving with "unknown", the type
  * it gives notes of plugins without one, makes it fall back to plain text.
+ * Only on a real save: saving when a note opens could send a copy that is
+ * not synced yet and win over a newer one (Standard Notes keeps the copy
+ * changed last), and read-only views (note history) refuse saves with an alert.
  */
 const OLD_NOTE_TYPE = 'authentication'
 
-const clearOldNoteType = (item: RelayItem): boolean => {
-  if (item.content?.noteType !== OLD_NOTE_TYPE) return false
-  item.content.noteType = 'unknown'
-  return true
+const clearOldNoteType = (item: RelayItem): void => {
+  if (item.content?.noteType === OLD_NOTE_TYPE) item.content.noteType = 'unknown'
 }
 
 export const createStandardNotesHost = (): Host => {
   const relay = new StandardNotesRelay(window)
   let current: RelayItem | null = null
-  const retyped = new Set<string>()
 
   return {
     mode: 'standardnotes',
@@ -61,13 +61,6 @@ export const createStandardNotesHost = (): Host => {
     subscribe(listener) {
       relay.streamContextItem((item: RelayItem) => {
         current = item
-        // Fix the note type once on open, without waiting for an edit. Not
-        // for locked notes: Standard Notes refuses those saves with an alert.
-        if (item.content?.noteType === OLD_NOTE_TYPE && !isLocked(item) && !retyped.has(item.uuid)) {
-          retyped.add(item.uuid)
-          clearOldNoteType(item)
-          relay.saveItem(item)
-        }
         listener({
           text: item.content?.text ?? '',
           locked: isLocked(item),

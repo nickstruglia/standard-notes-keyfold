@@ -20,7 +20,7 @@ Keyfold is a [Standard Notes](https://standardnotes.com) plugin for crypto seed 
 - A hidden field for the BIP39 passphrase ("25th word"), plus a visible hint for it.
 
 **Wallet keys**
-- Recognizes and checks hex (raw 32-byte / EVM), WIF (Bitcoin, Litecoin, Dogecoin, Dash, testnet) with its Base58Check checksum, BIP32 and SLIP-132 extended keys (xprv, yprv, zprv, Yprv, Zprv, tprv, Litecoin and Dogecoin versions...), Nostr `nsec`, Cardano and other Bech32 secret keys in either case, Solana base58 and byte-array keypairs, and encrypted keystores (V3 and EIP-2335, with a field for the password).
+- Recognizes and checks hex (raw 32-byte / EVM), WIF (Bitcoin, Litecoin, Dogecoin, Dash, testnet) with its Base58Check checksum, BIP32 and SLIP-132 extended keys (xprv, yprv, zprv, Yprv, Zprv, tprv, Litecoin and Dogecoin versions...), also written with their key origin as Sparrow and Coldcard export them (`[73c5da0a/84'/0'/0']xprv…`), Nostr `nsec`, Cardano and other Bech32 secret keys in either case, Solana base58 and byte-array keypairs, and encrypted keystores (V3 and EIP-2335, with a field for the password).
 - Warns you if you paste public data instead (an address, xpub or npub), a key with a broken checksum or a missing character, or a private key into a field that is not hidden.
 
 **Wallet details**
@@ -71,6 +71,7 @@ SSH, PGP, API and other keys have an **expiry date**: Keyfold flags them 30 days
    https://nickstruglia.github.io/standard-notes-keyfold/ext.json
    ```
 3. Create a new note, open the editor menu, and choose **Keyfold**.
+4. The empty note lists every type of entry to start with: seed phrases and wallet keys, SSH, PGP and API keys, recovery codes and other secrets. Add more any time with **Add**.
 
 Open the URL above without `ext.json` to try a demo in your browser (sample data only, nothing is saved).
 
@@ -80,7 +81,7 @@ Open the URL above without `ext.json` to try a demo in your browser (sample data
 2. Right away, before opening any Keyfold note, install the new `ext.json` URL. On desktop, restart the app afterwards.
 3. Your notes open in the new copy: they are linked to the plugin's identifier, which never changes.
 
-If a Keyfold note opens in another editor in between (for example an empty Authenticator list), do not add anything there: reinstall Keyfold, and use **Note history** to restore the note if something was saved. Notes created before October 2026 were given that note type, so they could open in Authenticator when Keyfold was missing. Keyfold now clears it the first time it opens such a note, unless **Prevent editing** is on for it.
+If a Keyfold note opens in another editor in between (for example an empty Authenticator list), do not add anything there: reinstall Keyfold, and use **Note history** to restore the note if something was saved. Notes created before October 2026 were given that note type, so they could open in Authenticator when Keyfold was missing. Keyfold now clears it the next time you change such a note.
 
 ## Mobile
 
@@ -127,7 +128,7 @@ The preview in Standard Notes' note list contains only counts (for example "Keyf
 **Backup files.** In Keyfold's **Settings → Backup file**, choose **Make a backup file**, pick a password for it and save the file (`keyfold-backup-<date>.json`) somewhere other than Standard Notes: a flash drive, an external disk, another cloud. Keep the [offline viewer](https://nickstruglia.github.io/standard-notes-keyfold/keyfold-viewer.html) next to it: its **Save this viewer** link downloads it as one file, `keyfold-viewer.html`, which is also in [`keyfold.zip`](https://nickstruglia.github.io/standard-notes-keyfold/keyfold.zip). Make a new backup after adding or changing keys.
 
 - **To read a backup**, open `keyfold-viewer.html` in any browser, choose the backup file (or drop it on the page) and enter its password. It works offline, is read-only and saves nothing.
-- **To restore a backup** into Standard Notes, create a new note, change its note type to Keyfold, choose **Restore a backup file**, pick the file (or paste its text) and enter the backup password. The restored vault keeps that password; you can change it in Settings. Pasting the file's whole text into a new note, then changing the note type to Keyfold and unlocking it, works too.
+- **To restore a backup** into Standard Notes, create a new note, change its note type to Keyfold, choose **Restore a backup file**, pick the file (or paste its text) and enter the backup password. If the note already has a vault password, it keeps it; otherwise the backup's password becomes the vault password, which you can change in Settings. Pasting the file's whole text into a new note, then changing the note type to Keyfold and unlocking it, works too.
 - **On a phone**, the Standard Notes app may not save files from plugins: use **Copy as text** and paste it into a file or another app, or make the backup on a computer.
 
 **Recovery viewer.** The same viewer opens a note's text: open `keyfold-viewer.html`, [the site with `#open`](https://nickstruglia.github.io/standard-notes-keyfold/#open) or `index.html#open` from the unzipped `keyfold.zip`, choose **Paste a note's text instead**, paste it and enter the vault password if it has one.

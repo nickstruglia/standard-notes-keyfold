@@ -20,6 +20,7 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
   const [typing, setTyping] = useState<number | null>(null)
   const [notice, setNotice] = useState('')
   const refs = useRef<(HTMLInputElement | null)[]>([])
+  const primed = useRef(new WeakSet<HTMLInputElement>())
   const wordlist = usesBip39Wordlist(scheme)
   const revealTyped = !isTouchDevice()
 
@@ -168,9 +169,13 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
                 ref={(el) => {
                   // A field first created while words are revealed starts as a
                   // password field for a moment, so the keyboard treats it as one.
-                  if (el && !refs.current[i] && el.type === 'text') {
-                    el.type = 'password'
-                    el.type = 'text'
+                  // Once per field: Preact calls this ref again on every render.
+                  if (el && !primed.current.has(el)) {
+                    primed.current.add(el)
+                    if (el.type === 'text') {
+                      el.type = 'password'
+                      el.type = 'text'
+                    }
                   }
                   refs.current[i] = el
                 }}

@@ -402,10 +402,18 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
   if (!text) return null
 
   // An AWS credentials or config file ([default] then key = value lines) is INI, not JSON.
-  if (/^\[[\w .-]+\]\s*$/m.test(text.split('\n')[0]) && /^\s*[\w.-]+\s*=/m.test(text)) {
+  // [ \t]*, not \s*: \s also matches newlines, and a long run of them made this check slow.
+  if (/^\[[\w .-]+\][ \t]*\r?$/.test(text.split('\n')[0]) && /^[ \t]*[\w.-]+[ \t]*=/m.test(text)) {
     return /aws_secret_access_key\s*=/i.test(text)
       ? { level: 'ok', label: 'AWS credentials file', detail: 'Contains a secret access key.' }
       : { level: 'info', label: 'Settings file (INI)' }
+  }
+
+  // Sparrow, Coldcard and Bitcoin Core write the key origin first: [73c5da0a/84'/0'/0']xprv…
+  const origin = /^\[([0-9a-fA-F]{8}(?:\/\d+['hH]?)*)\]\s*(?=\S)/.exec(text)
+  if (origin) {
+    const found = await detectKeyFormat(text.slice(origin[0].length))
+    if (found) return { ...found, detail: [found.detail, `Key origin [${origin[1]}].`].filter(Boolean).join(' ') }
   }
 
   if (text.startsWith('{') || text.startsWith('[')) {
@@ -558,7 +566,7 @@ export const detectKeyFormat = async (input: string): Promise<KeyFormat | null> 
       if (decoded && (decoded.length === 37 || decoded.length === 38) && WIF_VERSIONS[decoded[0]]) {
         return { level: 'error', label: 'Looks like WIF, but the checksum fails', detail: 'Check for a typo.' }
       }
-      if (/^[xyztuvYZUV](prv|pub)/.test(text)) {
+      if (/^(?:[xyztuvYZUV](?:prv|pub)|[LM]t(?:pv|ub)|dg(?:pv|ub))/.test(text)) {
         if (text.length === 111) return { level: 'error', label: 'Looks like an extended key, but the checksum fails', detail: 'Check for a typo.' }
         if (text.length === 110 || text.length === 112) {
           return { level: 'error', label: 'Looks like an extended key, but a character may be missing or extra', detail: 'Extended keys are 111 characters.' }
