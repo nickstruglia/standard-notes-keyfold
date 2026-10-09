@@ -15,7 +15,7 @@ Keyfold is a [Standard Notes](https://standardnotes.com) plugin for crypto seed 
 - Each word sits in its own numbered, masked field. Paste a whole phrase into word 1 and it fills the grid. Numbered phrases copied from a backup sheet with several columns are put back in order.
 - BIP39 checks: every word is checked against the official wordlist, the checksum is verified, typos get "did you mean" suggestions, and English 4-letter abbreviations can be expanded with one click. Words are never changed without you asking: for BIP39 phrases in other languages or old Electrum seeds, choose **Other**.
 - Electrum 2.0+ seeds are validated and their type shown (standard, segwit, 2FA); an Electrum seed entered as BIP39 is pointed out.
-- Monero 25- and 13-word seeds have their checksum word verified.
+- Monero 25- and 13-word English seeds have their checksum word verified the way Monero does it: abbreviated words work, and words that are not in the list are pointed out. Seeds in Monero's other languages are marked as not checked.
 - Aezeed (LND) 24-word seeds have their checksum verified, without needing the seed's password; an aezeed seed entered as BIP39, or the reverse, is pointed out.
 - A hidden field for the BIP39 passphrase ("25th word"), plus a visible hint for it.
 
@@ -185,3 +185,5 @@ The workflow runs the tests, writes your Pages URL into `ext.json` and the Conte
 ## License
 
 [MIT](LICENSE) © 2026 Nicholas Truglia
+
+The Monero English wordlist in `src/lib/moneroWords.ts` is © The Monero Project, under the BSD 3-Clause licence (also shown in Keyfold under Settings → About → Third-party notices).

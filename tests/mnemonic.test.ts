@@ -3,6 +3,8 @@ import { generateMnemonic, validateMnemonic } from '@scure/bip39'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { BIP39_ENGLISH } from '../src/lib/wordlist'
 import { sha256, toHex, utf8 } from '../src/lib/encoding'
+import { crc32 as zlibCrc32 } from 'node:zlib'
+import { MONERO_ENGLISH } from '../src/lib/moneroWords'
 import { aezeedCheck, checkMnemonic, electrumSeedType, expandPrefix, parsePhrase, splitPhrase, suggestWords } from '../src/lib/mnemonic'
 
 const words = (phrase: string) => phrase.split(' ')
@@ -243,6 +245,69 @@ describe('aezeed seeds', () => {
     for (let i = 0; i < 200; i++) {
       const phrase = generateMnemonic(wordlist, 256)
       expect(aezeedCheck(words(phrase).map((w) => BIP39_ENGLISH.indexOf(w)))).not.toBe('valid')
+    }
+  })
+})
+
+describe('Monero seeds (English list, checked exactly as Monero does)', () => {
+  it('matches the published Monero English wordlist', async () => {
+    expect(MONERO_ENGLISH).toHaveLength(1626)
+    expect(toHex(await sha256(utf8(MONERO_ENGLISH.join('\n') + '\n')))).toBe(
+      'eaa6bce7dd92f4d6dd74f224264e0ef4ad21095d68ec77616b26ceb599baf4f7',
+    )
+  })
+
+  // An independent implementation of Monero's create_checksum_index, with Node's CRC-32.
+  const moneroSeed = (body: string[]) => {
+    const prefixes = body.map((w) => w.slice(0, 3)).join('')
+    return [...body, body[zlibCrc32(Buffer.from(prefixes)) % body.length]]
+  }
+  const randomWords = (n: number) => Array.from({ length: n }, () => MONERO_ENGLISH[Math.floor(Math.random() * 1626)])
+
+  it('accepts genuine 25- and 13-word seeds, including abbreviated words', async () => {
+    for (let i = 0; i < 100; i++) {
+      const seed = moneroSeed(randomWords(24))
+      expect((await checkMnemonic('monero', seed)).status).toBe('valid')
+      const short = moneroSeed(randomWords(12))
+      expect((await checkMnemonic('monero', short)).message).toBe('Monero checksum word OK (English, 13 words).')
+      // Monero only reads the first 3 letters of each word.
+      const abbreviated = seed.map((w, j) => (j % 5 === 0 ? w.slice(0, 3) : w))
+      expect((await checkMnemonic('monero', abbreviated)).status).toBe('valid')
+    }
+  })
+
+  it('lets about as few typos through as Monero itself', async () => {
+    let passed = 0
+    const runs = 1000
+    for (let i = 0; i < runs; i++) {
+      const seed = moneroSeed(randomWords(24))
+      const at = Math.floor(Math.random() * 24)
+      const typo = [...seed]
+      do typo[at] = MONERO_ENGLISH[Math.floor(Math.random() * 1626)]
+      while (typo[at].slice(0, 3) === seed[at].slice(0, 3))
+      if ((await checkMnemonic('monero', typo)).status === 'valid') passed++
+    }
+    // Monero's own check: about 1 in 25. The old multi-language guess: about 1 in 10.
+    expect(passed / runs).toBeLessThan(0.07)
+  })
+
+  it('names words that are not in the English list', async () => {
+    const seed = moneroSeed(randomWords(24))
+    seed[4] = 'qqqq'
+    const result = await checkMnemonic('monero', seed)
+    expect(result.status).toBe('invalid')
+    expect(result.message).toBe('Not in the Monero English wordlist: #5.')
+    expect(result.unknownWords).toEqual([4])
+  })
+
+  it('does not call genuine seeds in other languages invalid', async () => {
+    // Generated with Monero's algorithm from its German (capitalised, 4-letter prefixes) and French lists.
+    const german = 'kämmen Moorhuhn zähmen Kerze Kamel Leder Obdach Diadem Delfin Leseecke Klischee Pudding Person Zweck Deponie Bauer Kabarett Fitness Boudoir Barkasse Maske Sirup Quark Anakonda Kamel'
+    const french = 'ratio lune navrer sauna trame retard sanguin conclure rire aduler pilote azote averse annoncer dieu extase record amener vitamine nouer hibou moyen rapace disposer rapace'
+    for (const seed of [german, french]) {
+      const result = await checkMnemonic('monero', seed.split(' '))
+      expect(result.status).toBe('unchecked')
+      expect(result.message).toMatch(/English seeds only/)
     }
   })
 })

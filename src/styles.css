@@ -922,6 +922,15 @@ select.input {
 .paste-note {
   width: 100%;
 }
+.notices > summary {
+  color: var(--info);
+  cursor: pointer;
+}
+.notices pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
 .paste-note > summary {
   font-size: 0.85rem;
   color: var(--info);

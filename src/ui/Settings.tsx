@@ -5,6 +5,7 @@ import { formatDate } from './labels'
 import { type VaultData, type VaultSettings, isFromNewerVersion } from '../lib/vault'
 import { DEFAULT_ITERATIONS, encryptionAvailable } from '../lib/vaultCrypto'
 import { type Backup, VIEWER_FILE, changedSinceBackup } from '../lib/backup'
+import { MONERO_NOTICE } from '../lib/moneroWords'
 
 const seconds = (n: number) => (n === 0 ? 'Never' : n < 60 ? `${n} seconds` : `${n / 60} minute${n === 60 ? '' : 's'}`)
 
@@ -483,6 +484,11 @@ export const Settings = ({
             . Its Content Security Policy blocks all outgoing connections, images and fonts from other sites; only your
             Standard Notes theme's stylesheets load.
           </p>
+          <details class="notices">
+            <summary class="small">Third-party notices</summary>
+            <p class="small">Monero seeds are checked against the Monero English wordlist, used under this licence:</p>
+            <pre class="small">{MONERO_NOTICE}</pre>
+          </details>
         </section>
       </div>
     </article>

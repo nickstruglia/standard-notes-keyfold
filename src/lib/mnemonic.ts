@@ -1,4 +1,5 @@
 import { BIP39_ENGLISH } from './wordlist'
+import { MONERO_ENGLISH } from './moneroWords'
 import { hasSubtleCrypto, hmacSha512, sha256, toHex, utf8 } from './encoding'
 
 export type MnemonicScheme = 'bip39' | 'electrum' | 'aezeed' | 'slip39' | 'monero' | 'other'
@@ -268,9 +269,27 @@ export const checkMnemonic = async (scheme: MnemonicScheme, rawWords: string[]):
     }
     case 'monero': {
       if (words.length !== 25 && words.length !== 13) break
-      const ok = moneroChecksumOk(words)
-      return ok
-        ? { status: 'valid', message: `Monero checksum word OK (${words.length} words).`, unknownWords }
+      // Only Monero's English list ships with Keyfold. Other languages share
+      // at most a handful of whole words with it, so a seed counts as English
+      // when most of its words are English words.
+      const english = words.filter((w) => MONERO_WORDS.has(w)).length
+      if (english < Math.ceil(words.length * 0.6)) {
+        return {
+          status: 'unchecked',
+          message: 'Monero checksums are checked for English seeds only, and these words look like another language.',
+          unknownWords,
+        }
+      }
+      const unknown = words.flatMap((w, i) => (MONERO_PREFIXES.has(moneroPrefix(w)) ? [] : [i]))
+      if (unknown.length > 0) {
+        return {
+          status: 'invalid',
+          message: `Not in the Monero English wordlist: ${unknown.map((i) => `#${i + 1}`).join(', ')}.`,
+          unknownWords: unknown,
+        }
+      }
+      return moneroChecksumOk(words)
+        ? { status: 'valid', message: `Monero checksum word OK (English, ${words.length} words).`, unknownWords }
         : {
             status: 'invalid',
             message: 'The last word does not match the Monero checksum. Check the spelling and order of every word.',
@@ -354,21 +373,21 @@ export const aezeedCheck = (indices: number[]): 'valid' | 'version' | 'checksum'
   return crc32(bytes.subarray(0, 29), CRC32_CASTAGNOLI) === stored ? 'valid' : 'checksum'
 }
 
+const MONERO_PREFIX_LENGTH = 3
+const moneroPrefix = (word: string): string => [...word].slice(0, MONERO_PREFIX_LENGTH).join('')
+const MONERO_WORDS = new Set(MONERO_ENGLISH)
+const MONERO_PREFIXES = new Set(MONERO_ENGLISH.map(moneroPrefix))
+
 /**
- * Monero (25 words, or 13 for MyMonero): the last word repeats one of the
- * others, chosen by a CRC-32 of each word's first letters. English and most
- * languages use 3-letter prefixes; some use 4, Chinese 1, so all are tried.
- * Like Monero, only the prefixes are compared, so abbreviated words work;
- * whole words for 1-letter prefixes, where comparing one letter would let
- * most typos through (Chinese words are a single character anyway).
+ * Monero (25 words, or 13 for MyMonero), English: the last word repeats the
+ * word at CRC-32(the first 3 letters of each other word) modulo their count.
+ * As in Monero, words are matched and compared by those 3 letters only, so
+ * abbreviated words work. Other languages use other lists and prefix
+ * lengths, and are not checked.
  */
 export const moneroChecksumOk = (words: string[]): boolean => {
-  const body = words.slice(0, -1).map((w) => w.normalize('NFC'))
-  const last = words[words.length - 1].normalize('NFC')
-  return [3, 4, 1].some((length) => {
-    const prefix = (w: string) => [...w].slice(0, length).join('')
-    const prefixes = body.map(prefix).join('')
-    const expected = body[crc32(utf8(prefixes)) % body.length]
-    return length === 1 ? expected === last : prefix(expected) === prefix(last)
-  })
+  const body = words.slice(0, -1)
+  const last = words[words.length - 1]
+  const index = crc32(utf8(body.map(moneroPrefix).join(''))) % body.length
+  return moneroPrefix(body[index]) === moneroPrefix(last)
 }

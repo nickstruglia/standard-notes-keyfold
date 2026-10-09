@@ -131,7 +131,8 @@ export const WordGrid = ({ words, scheme, unknownWords, onChange }: Props) => {
   const filled = words.filter(Boolean)
   const shown = (i: number) => revealed || (revealTyped && typing === i)
   const focusedUnknown = focused !== null && unknownWords.includes(focused) && words[focused]
-  const hints = focusedUnknown && shown(focused!) ? suggestWords(words[focused!]) : []
+  // Suggestions come from the BIP39 list: not for Monero's own wordlist.
+  const hints = wordlist && focusedUnknown && shown(focused!) ? suggestWords(words[focused!]) : []
 
   return (
     <div class="word-grid-wrap">

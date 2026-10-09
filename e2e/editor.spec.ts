@@ -1175,3 +1175,23 @@ test('shrinking a seed phrase does not undo words changed while the dialog was o
   expect(words?.length).toBe(24)
   expect(words?.[0]).toBe('zoo')
 })
+
+test('Settings shows the Monero wordlist licence', async ({ page }) => {
+  const { app } = await open(page)
+  await app.getByRole('button', { name: 'Settings' }).click()
+  await app.getByText('Third-party notices').click()
+  await expect(app.getByText(/Copyright \(c\) 2014-2024, The Monero Project/)).toBeVisible()
+})
+
+test('a mistyped English Monero word is marked, without BIP39 suggestions', async ({ page }) => {
+  const seed = 'sequence atlas unveil summon pebbles tuesday beer rudely snake rockets different fuselage woven tagged bested dented vegan hover rapid fawns obvious muppet randomly seasons randomly'.split(' ')
+  seed[3] = 'abandn' // not a Monero word, but one letter from BIP39's "abandon"
+  const { app } = await open(page, vaultText([{ id: 'm', kind: 'mnemonic', label: 'XMR', chain: 'Monero', scheme: 'monero', words: seed }]))
+  await app.getByRole('button', { name: /XMR/ }).click()
+  await expect(app.getByText('Not in the Monero English wordlist: #4.')).toBeVisible()
+  await app.getByRole('button', { name: 'Reveal words' }).click()
+  const word = app.getByLabel('Word 4', { exact: true })
+  await expect(word).toHaveAttribute('aria-invalid', 'true')
+  await word.focus()
+  await expect(app.getByText(/Did you mean/)).toHaveCount(0)
+})
