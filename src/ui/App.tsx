@@ -7,8 +7,10 @@ import { EntryStack } from './EntryStack'
 import { Toolbar, type ViewPrefs } from './Toolbar'
 import { Settings } from './Settings'
 import { RestoreBackup } from './RestoreBackup'
+import { KIND_ICONS, KIND_LABELS } from './labels'
 import { ConfirmDialog, ConnectingScreen, type DialogState, ForeignScreen, LockScreen, NewerScreen, type ToastItem, Toasts, UnsupportedScreen } from './Screens'
 import { BIP39_ENGLISH } from '../lib/wordlist'
+import { KINDS } from '../lib/kinds'
 import { clearClipboard, clearClipboardNow, copyText } from '../lib/clipboard'
 import {
   type EncryptedBlob,
@@ -728,20 +730,20 @@ export const App = ({ host }: { host: Host }) => {
         <strong>No keys yet.</strong>
       </p>
       <p class="small muted">
-        Keep every seed phrase and wallet key in this note, plus SSH, PGP and API keys and recovery codes. Each one folds
-        into a single line until you open it, and secrets stay hidden until you reveal them.
+        Keep crypto seed phrases and wallet keys here, and also SSH, PGP and API keys, recovery codes and any other
+        secret. Each one folds into a single line until you open it, and secrets stay hidden until you reveal them.
       </p>
       {!readOnly && (
         <>
-          <div class="row tight center">
-            <button type="button" class="button primary small" onClick={() => addEntry('mnemonic')}>
-              <Icon name="plus" /> Seed phrase
-            </button>
-            <button type="button" class="button small" onClick={() => addEntry('privateKey')}>
-              <Icon name="plus" /> Wallet key
-            </button>
+          <p class="small">What do you want to add first?</p>
+          <div class="kind-choices" role="group" aria-label="Add your first entry">
+            {KINDS.map((kind) => (
+              <button type="button" class="button small" onClick={() => addEntry(kind)}>
+                <Icon name={KIND_ICONS[kind]} /> {KIND_LABELS[kind]}
+              </button>
+            ))}
           </div>
-          <p class="small muted">Other key types are under Add.</p>
+          <p class="small muted">Add more of any type later with the Add (+) button.</p>
           <p class="small">
             <button type="button" class="link-button" onClick={() => setRestoring(true)}>
               Restore a backup file

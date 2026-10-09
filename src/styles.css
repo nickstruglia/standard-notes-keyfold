@@ -672,6 +672,22 @@ select.input {
   justify-content: center;
   margin-top: 12px;
 }
+/* The first entry: every type, so a new vault doesn't look crypto-only. */
+.kind-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  max-width: 640px;
+  margin: 8px auto 10px;
+}
+.kind-choices .button {
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: left;
+}
+.kind-choices svg {
+  flex: none;
+}
 .placeholder {
   height: 100%;
   display: flex;
@@ -1125,6 +1141,24 @@ a.button {
   .toolbar .button {
     padding: 5px 8px;
   }
+  /* Search gets a row of its own. The filter fills the next one, and Add keeps
+     its label there: the empty vault refers to it. */
+  .toolbar .search {
+    flex-basis: 100%;
+  }
+  .toolbar .filter {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .toolbar .add-button .button-text {
+    display: inline;
+  }
+  .toolbar .add-button {
+    padding: 5px 12px;
+  }
+  .kind-choices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -1207,7 +1241,8 @@ a.button {
 /* Touch screens: targets of at least 40 px. */
 @media (pointer: coarse) {
   .button,
-  .toolbar .button {
+  .toolbar .button,
+  .toolbar select.input {
     min-height: 40px;
   }
   .toolbar .button {

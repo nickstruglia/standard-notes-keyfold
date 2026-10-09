@@ -52,7 +52,7 @@ export const Toolbar = (p: Props) => {
             spellcheck={false}
           />
         </div>
-        <select class="input" aria-label="Filter" value={p.filter} onChange={(e) => p.onFilter(e.currentTarget.value as Filter)}>
+        <select class="input filter" aria-label="Filter" value={p.filter} onChange={(e) => p.onFilter(e.currentTarget.value as Filter)}>
           {FILTERS.map(([id, label]) => (
             <option value={id}>
               {label}
@@ -61,7 +61,7 @@ export const Toolbar = (p: Props) => {
           ))}
         </select>
         {!p.readOnly && (
-          <Popover label="Add" icon="plus" kind="menu" buttonClass="button small primary">
+          <Popover label="Add" icon="plus" kind="menu" buttonClass="button small primary add-button">
             {(close) =>
               ADD_GROUPS.map((group) => (
                 <div role="group" aria-label={GROUP_LABELS[group]} class="menu-group">

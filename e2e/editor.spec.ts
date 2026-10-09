@@ -886,7 +886,7 @@ test('stores an SSH key and an expiring API token alongside crypto entries', asy
 
   // The Add menu lists crypto first.
   await app.getByRole('button', { name: 'Add' }).click()
-  const groups = await app.getByRole('group').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
+  const groups = await app.locator('.popover').getByRole('group').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label')))
   expect(groups).toEqual(['Crypto', 'Keys', 'Secrets'])
   await app.locator('.popover').getByRole('button', { name: 'SSH key', exact: true }).click()
   await app.getByLabel('Label').fill('Deploy key')
@@ -1029,4 +1029,39 @@ test('restore can be cancelled, is offered only while editing is allowed, and su
   await app.getByRole('button', { name: 'Restore a backup file' }).click()
   await expect(app.getByText(/may not let plugins open files/)).toBeVisible()
   await expect(app.getByLabel('Backup text')).toBeVisible()
+})
+
+test('an empty vault offers every type of entry, not only crypto ones', async ({ page }) => {
+  const { app, errors } = await open(page)
+  const choices = app.getByRole('group', { name: 'Add your first entry' }).getByRole('button')
+  await expect(choices).toHaveText([
+    'Seed phrase',
+    'Wallet key',
+    'SSH key',
+    'PGP key',
+    'API key or token',
+    'Other key',
+    'Recovery codes',
+    'Other secret',
+  ])
+  await choices.filter({ hasText: 'Recovery codes' }).click()
+  await expect.poll(async () => (await noteJson(page))?.vault?.entries?.map((e: any) => e.kind)).toEqual(['recoveryCodes'])
+  await expect(app.getByRole('group', { name: 'Add your first entry' })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('on phones, Add keeps its label and sits next to the filter at the same height', async ({ page }) => {
+  test.skip(test.info().project.name === 'desktop', 'phone layout only')
+  const { app } = await open(page, '', { themeUrl: '/dev/dark-theme.css' })
+  const search = await app.getByRole('searchbox', { name: 'Search' }).boundingBox()
+  const filter = await app.getByRole('combobox', { name: 'Filter' }).boundingBox()
+  const add = app.getByRole('button', { name: 'Add', exact: true })
+  await expect(add.getByText('Add', { exact: true })).toBeVisible()
+  const box = (await add.boundingBox())!
+  // Search has its own row; the filter fills the next one, next to Add.
+  expect(filter!.y).toBeGreaterThan(search!.y + search!.height - 1)
+  expect(Math.abs(box.y - filter!.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(box.height - filter!.height)).toBeLessThanOrEqual(1)
+  expect(box.x + box.width).toBeLessThanOrEqual(search!.x + search!.width + 1)
+  expect(filter!.width).toBeGreaterThan(box.width)
 })

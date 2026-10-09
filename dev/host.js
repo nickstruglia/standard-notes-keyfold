@@ -20,7 +20,7 @@ const state = {
   },
   saves: [],
   contextMessage: null,
-  theme: params.get('theme') === 'dark',
+  theme: params.get('theme') === 'dark' || params.has('themeUrl'),
 }
 window.mockHost = state
 // Lets tests stream arbitrary text, e.g. a revision restored from note history.
@@ -88,6 +88,8 @@ let darkThemeData
 
 const themeUrls = async () => {
   if (!state.theme) return []
+  // ?themeUrl=<stylesheet>: any theme, e.g. a third-party one from its own site.
+  if (params.get('themeUrl')) return [params.get('themeUrl')]
   if (mobile === 'file') return ['file:///android_asset/Web.bundle/src/web-src/components/assets/org.standardnotes.theme-focus/index.css']
   if (mobile) {
     darkThemeData ??= fetch(darkThemeUrl)
