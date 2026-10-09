@@ -922,18 +922,29 @@ select.input {
 .paste-note {
   width: 100%;
 }
-/* A saved entry opened locked: its fields are read-only until Edit. */
-.lock-hint {
+/* Saved entries open locked: a bar on top says so and holds Edit, or Done while editing. */
+.lock-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 8px 0 4px;
+  gap: 8px;
+  margin: 10px 0 4px;
+  padding: 4px 4px 4px 10px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
-.lock-hint svg {
+.lock-bar > span {
+  flex: 1;
+  min-width: 0;
+}
+.lock-bar > svg {
   flex: none;
 }
-.entry-actions .edit-toggle {
-  margin-right: 4px;
+.lock-bar.editing {
+  color: var(--fg);
+  border-color: var(--info);
 }
 .notices > summary {
   color: var(--info);

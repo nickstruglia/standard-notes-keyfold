@@ -1205,7 +1205,7 @@ test('saved entries open locked: Edit unlocks, Done and closing lock again, quic
   const { app, errors } = await open(page, vaultText([SEEDS[0]]))
   const card = app.getByRole('button', { name: /Cold storage/ })
   await card.click()
-  await expect(app.getByText('Locked, so nothing changes by accident. Use Edit to change it.')).toBeVisible()
+  await expect(app.getByText('Locked against accidental changes.')).toBeVisible()
   const word1 = app.getByLabel('Word 1', { exact: true })
   await expect(word1).toHaveAttribute('readonly', '')
   await expect(app.getByRole('combobox', { name: 'Scheme' })).toBeDisabled()

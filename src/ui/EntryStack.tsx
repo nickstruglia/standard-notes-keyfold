@@ -36,11 +36,11 @@ const EntryCard = memo(({ entry, lock, open, reminderMonths, isNew, onToggle, ..
           <Icon name="chevron" size={14} class="chevron" />
           <EntrySummary entry={entry} reminderMonths={reminderMonths} idPrefix={bodyId} />
         </button>
-        {open && <EntryActions entry={entry} lock={lock} {...handlers} />}
+        {open && <EntryActions entry={entry} {...handlers} />}
       </div>
       {open && (
         <div class="card-body" id={bodyId}>
-          <LockScope lock={lock}>
+          <LockScope lock={lock} onEditing={handlers.onEditing}>
             <EntryBody entry={entry} reminderMonths={reminderMonths} onUpdate={handlers.onUpdate} showLabel focusLabel={isNew} />
           </LockScope>
         </div>

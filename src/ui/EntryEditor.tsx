@@ -842,42 +842,39 @@ export interface EntryHandlers {
  */
 export type EntryLock = 'off' | 'locked' | 'editing'
 
-/** Makes everything inside read-only while the entry is locked. Always rendered, so unlocking keeps state (revealed words). */
-export const LockScope = ({ lock, children }: { lock: EntryLock; children: ComponentChildren }) => {
+/**
+ * Makes everything inside read-only while the entry is locked, under a bar
+ * that says so and holds Edit (or Done). Always rendered, so unlocking keeps
+ * state such as revealed words.
+ */
+export const LockScope = ({ lock, onEditing, children }: { lock: EntryLock; onEditing: (editing: boolean) => void; children: ComponentChildren }) => {
   const ui = useUi()
   const readOnly = ui.readOnly || lock === 'locked'
   const value = useMemo(() => (readOnly === ui.readOnly ? ui : { ...ui, readOnly }), [ui, readOnly])
+  const locked = lock === 'locked'
   return (
     <UiContext.Provider value={value}>
-      {lock === 'locked' && !ui.readOnly && (
-        <p class="lock-hint muted small">
-          <Icon name="lock" /> Locked, so nothing changes by accident. Use Edit to change it.
-        </p>
+      {lock !== 'off' && !ui.readOnly && (
+        <div class={`lock-bar ${lock}`}>
+          <Icon name={locked ? 'lock' : 'edit'} />
+          <span>{locked ? 'Locked against accidental changes.' : 'Editing.'}</span>
+          <button type="button" class="button small" onClick={() => onEditing(locked)}>
+            <Icon name={locked ? 'edit' : 'check'} /> {locked ? 'Edit' : 'Done'}
+          </button>
+        </div>
       )}
       {children}
     </UiContext.Provider>
   )
 }
 
-/** Edit or Done, then favorite, duplicate, archive and delete buttons. */
-export const EntryActions = ({
-  entry,
-  lock,
-  onUpdate,
-  onDelete,
-  onDuplicate,
-  onEditing,
-}: { entry: Entry; lock: EntryLock } & EntryHandlers) => {
+/** Favorite, duplicate, archive and delete buttons. */
+export const EntryActions = ({ entry, onUpdate, onDelete, onDuplicate }: { entry: Entry } & EntryHandlers) => {
   const { readOnly } = useUi()
   // Read-only, every action is disabled: show none rather than a row of greyed-out buttons.
   if (readOnly) return null
   return (
     <div class="entry-actions">
-      {lock !== 'off' && (
-        <button type="button" class="button small edit-toggle" onClick={() => onEditing(lock === 'locked')}>
-          <Icon name={lock === 'locked' ? 'edit' : 'check'} /> {lock === 'locked' ? 'Edit' : 'Done'}
-        </button>
-      )}
       <button
         type="button"
         class={`icon-button ${entry.favorite ? 'active' : ''}`}
@@ -980,10 +977,10 @@ export const EntryEditor = ({ entry, lock, reminderMonths, onUpdate, onDelete, o
           onInput={(e) => !readOnly && onUpdate({ label: e.currentTarget.value })}
         />
         <span class={`badge badge-${entry.kind}`}>{KIND_LABELS[entry.kind]}</span>
-        <EntryActions entry={entry} lock={lock} onUpdate={onUpdate} onDelete={onDelete} onDuplicate={onDuplicate} onEditing={onEditing} />
+        <EntryActions entry={entry} onUpdate={onUpdate} onDelete={onDelete} onDuplicate={onDuplicate} onEditing={onEditing} />
       </header>
       <div class="editor-body">
-        <LockScope lock={lock}>
+        <LockScope lock={lock} onEditing={onEditing}>
           <EntryBody entry={entry} reminderMonths={reminderMonths} onUpdate={onUpdate} showLabel={false} />
         </LockScope>
       </div>
