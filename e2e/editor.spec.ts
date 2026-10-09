@@ -923,3 +923,28 @@ test('works when the Standard Notes app has a "null" origin, as in the mobile ap
     .toContain('From a phone')
   expect(errors).toEqual([])
 })
+
+test('clears the note type early versions set, once, without changing the text', async ({ page }) => {
+  const text = vaultText([SEEDS[0]])
+  const { app, errors } = await open(page, text, { noteType: 'authentication' })
+  await expect(app.getByText('Cold storage')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBe('unknown')
+  expect(await noteText(page)).toBe(text)
+  expect(await page.evaluate(() => (window as any).mockHost.saves.length)).toBe(1)
+  expect(errors).toEqual([])
+})
+
+test('leaves the note type alone on a locked note and on current notes', async ({ page }) => {
+  const text = vaultText([SEEDS[0]])
+  const { app } = await open(page, text, { noteType: 'authentication', locked: '1' })
+  await expect(app.getByText('"Prevent editing" is on for this note.')).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(await page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBe('authentication')
+  expect(await page.evaluate(() => (window as any).mockHost.rejectedSaves ?? 0)).toBe(0)
+
+  const current = await open(page, text)
+  await expect(current.app.getByText('Cold storage')).toBeVisible()
+  await page.waitForTimeout(500)
+  expect(await page.evaluate(() => (window as any).mockHost.saves.length)).toBe(0)
+  expect(await page.evaluate(() => (window as any).mockHost.note.content.noteType)).toBeUndefined()
+})

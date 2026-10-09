@@ -80,7 +80,7 @@ Open the URL above without `ext.json` to try a demo in your browser (sample data
 2. Right away, before opening any Keyfold note, install the new `ext.json` URL. On desktop, restart the app afterwards.
 3. Your notes open in the new copy: they are linked to the plugin's identifier, which never changes.
 
-If a Keyfold note opens in another editor in between (for example an empty Authenticator list), do not add anything there: reinstall Keyfold, and use **Note history** to restore the note if something was saved. Notes created before October 2026 may still open in Authenticator when Keyfold is missing, because Standard Notes stored that note type with each note.
+If a Keyfold note opens in another editor in between (for example an empty Authenticator list), do not add anything there: reinstall Keyfold, and use **Note history** to restore the note if something was saved. Notes created before October 2026 were given that note type, so they could open in Authenticator when Keyfold was missing. Keyfold now clears it the first time it opens such a note, unless **Prevent editing** is on for it.
 
 ## Mobile
 

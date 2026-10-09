@@ -10,7 +10,13 @@ const state = {
   note: {
     uuid: 'note-1',
     content_type: 'Note',
-    content: { title: 'Crypto', text: params.get('text') || '', appData: { 'org.standardnotes.sn': { locked: false } } },
+    content: {
+      title: 'Crypto',
+      text: params.get('text') || '',
+      // ?noteType=authentication: a note made by an early Keyfold version.
+      ...(params.get('noteType') ? { noteType: params.get('noteType') } : {}),
+      appData: { 'org.standardnotes.sn': { locked: params.get('locked') === '1' } },
+    },
   },
   saves: [],
   contextMessage: null,

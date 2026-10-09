@@ -27,6 +27,7 @@ type RelayItem = {
     text?: string
     preview_plain?: string
     preview_html?: string
+    noteType?: string
     appData?: Record<string, Record<string, unknown>>
   }
 }
@@ -34,9 +35,25 @@ type RelayItem = {
 const isLocked = (item: RelayItem): boolean =>
   item.content?.appData?.['org.standardnotes.sn']?.locked === true
 
+/**
+ * Early versions of Keyfold gave their notes the note type "authentication".
+ * When Keyfold is missing, Standard Notes opens such a note in its
+ * Authenticator, where adding an entry overwrites the vault. Standard Notes
+ * stores the content a plugin saves as is, so saving with "unknown", the type
+ * it gives notes of plugins without one, makes it fall back to plain text.
+ */
+const OLD_NOTE_TYPE = 'authentication'
+
+const clearOldNoteType = (item: RelayItem): boolean => {
+  if (item.content?.noteType !== OLD_NOTE_TYPE) return false
+  item.content.noteType = 'unknown'
+  return true
+}
+
 export const createStandardNotesHost = (): Host => {
   const relay = new StandardNotesRelay(window)
   let current: RelayItem | null = null
+  const retyped = new Set<string>()
 
   return {
     mode: 'standardnotes',
@@ -44,6 +61,13 @@ export const createStandardNotesHost = (): Host => {
     subscribe(listener) {
       relay.streamContextItem((item: RelayItem) => {
         current = item
+        // Fix the note type once on open, without waiting for an edit. Not
+        // for locked notes: Standard Notes refuses those saves with an alert.
+        if (item.content?.noteType === OLD_NOTE_TYPE && !isLocked(item) && !retyped.has(item.uuid)) {
+          retyped.add(item.uuid)
+          clearOldNoteType(item)
+          relay.saveItem(item)
+        }
         listener({
           text: item.content?.text ?? '',
           locked: isLocked(item),
@@ -57,6 +81,7 @@ export const createStandardNotesHost = (): Host => {
       item.content.text = text
       item.content.preview_plain = preview
       item.content.preview_html = ''
+      clearOldNoteType(item)
       relay.saveItem(item)
     },
   }
