@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@noble/hashes": "2.4.0",
-    "@playwright/test": "1.56.1",
+    "@playwright/test": "1.64.0",
     "@scure/base": "2.4.0",
     "@scure/bip39": "2.4.0",
     "@types/node": "22.20.5",
